@@ -12,12 +12,14 @@ encoding = 'utf-8'
 def get_files_list() -> list:
     # return [f for f in os.listdir(files_dir) if os.path.isfile(f) and f.endswith('.txt')]
     # return [f for f in os.listdir(files_dir) if os.path.isfile(f)]
-    return [f for f in os.listdir(files_dir)]
+    return [f"{f} {os.path.getsize(os.path.join(files_dir, f))}" for f in os.listdir(files_dir)]
 
 
 def send_files_list(client_socket):
-    client_socket.sendall('\n'.join(get_files_list()).encode())
-    client_socket.sendall(b'\nEND_OF_LIST')
+    data = '\n'.join(get_files_list()).encode()
+    datasize = len(data)
+    client_socket.sendall(f'ACK {datasize}'.encode(encoding))
+    client_socket.sendall(data)
 
 
 def save_file(client_socket, filename: str, filesize: int, act: str):
@@ -26,7 +28,7 @@ def save_file(client_socket, filename: str, filesize: int, act: str):
     if check_filename(filename) and act == 'ADD':
         mode = 'ab'
 
-    with open(files_dir + "/" + filename + ".txt", mode) as f:
+    with open(os.path.join(files_dir, filename) + ".txt", mode) as f:
         count = filesize // 1024 + 1
 
         for i in range(1, count + 1):
@@ -37,7 +39,7 @@ def save_file(client_socket, filename: str, filesize: int, act: str):
 
 
 def check_filename(filename) -> bool:
-    return os.path.exists(files_dir + "/" + filename + ".txt")
+    return os.path.exists(os.path.join(files_dir, filename) + ".txt")
 
 
 def get_file(client_socket):
@@ -46,7 +48,7 @@ def get_file(client_socket):
 
 def del_file(filename: str, client_socket):
     if check_filename(filename):
-        os.remove(files_dir + "/" + filename + ".txt")
+        os.remove(os.path.join(files_dir, filename) + ".txt")
         client_socket.sendall(b'SUCCESS')
     else:
         client_socket.sendall(b'ERROR File not exist')

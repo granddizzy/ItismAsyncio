@@ -80,33 +80,43 @@ def input_path_file() -> str:
 
 
 def input_filename() -> str:
-    return input("Введите имя файла на сервере :")
+    while True:
+        filename = input("Введите имя файла на сервере :")
+        if ' ' not in filename:
+            return filename
+        else:
+            print("Имя файла не должно содержать пробелы")
 
 
 def get_file_list(client_socket) -> list:
     files_list = []
 
     client_socket.send(b'LIST')
+    ack = client_socket.recv(1024).decode(encoding).strip()
 
-    data = client_socket.recv(1024).decode(encoding)
-    while data:
-        if 'END_OF_LIST' in data:
-            break
-        files_list.append(data.strip())
-        data = client_socket.recv(1024).decode(encoding)
+    if ack.startswith('ACK'):
+        _, filesize = ack.split(' ', 1)
 
-    return files_list
+        count = int(filesize) // 1024 + 1
+
+        for i in range(1, count + 1):
+            data = client_socket.recv(1024)
+            files_list = data.split(b'\n')
+
+    return list(map(lambda x: x.decode(encoding), files_list))
 
 
 def show_file_list(files: list) -> None:
+    print("\n" + "=" * 83)
+    print(f"{'Имя файла':<40} {'Размер':<10}")
+    print("=" * 83)
     if files:
-        print("\n" + "=" * 83)
-        for filename in files:
-            print(filename)
-
-        print("=" * 83 + "\n")
+        for filedata in files:
+            filename, filesize = filedata.split(' ', 1)
+            print(f"{filename:<40} {filesize:<10}")
     else:
         print("Файлов нет")
+    print("=" * 83 + "\n")
 
 
 def check_local_file(path: str) -> bool:
