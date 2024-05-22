@@ -20,18 +20,24 @@ def send_files_list(client_socket):
     client_socket.sendall(b'\nEND_OF_LIST')
 
 
-def save_file(client_socket, filename: str, filesize: int):
-    with open(files_dir + "/" + filename, 'wb') as f:
+def save_file(client_socket, filename: str, filesize: int, act: str):
+    mode = 'wb'
+
+    if check_filename(filename) and act == 'ADD':
+        mode = 'ab'
+
+    with open(files_dir + "/" + filename + ".txt", mode) as f:
         count = filesize // 1024 + 1
 
         for i in range(1, count + 1):
             data = client_socket.recv(1024)
             f.write(data)
+
     client_socket.sendall(b'SUCCESS')
 
 
 def check_filename(filename) -> bool:
-    return os.path.exists(files_dir + "/" + filename)
+    return os.path.exists(files_dir + "/" + filename + ".txt")
 
 
 def get_file(client_socket):
@@ -40,7 +46,7 @@ def get_file(client_socket):
 
 def del_file(filename: str, client_socket):
     if check_filename(filename):
-        os.remove(files_dir + "/" + filename)
+        os.remove(files_dir + "/" + filename + ".txt")
         client_socket.sendall(b'SUCCESS')
     else:
         client_socket.sendall(b'ERROR File not exist')
@@ -55,18 +61,20 @@ def handle(client_socket):
                 send_files_list(client_socket)
             elif header.startswith('GET'):
                 get_file(client_socket)
-            elif header.startswith('PUT'):
-                _, filename, filesize = header.split(' ', 2)
-
-                if not check_filename(filename):
-                    client_socket.sendall(b'ACK_FILENAME')
-                    save_file(client_socket, filename, int(filesize))
+            elif header.startswith('CHECK'):
+                _, filename = header.split(' ', 1)
+                if check_filename(filename):
+                    client_socket.sendall(b'EXISTS')
                 else:
-                    client_socket.sendall(b'ERROR File exists')
+                    client_socket.sendall(b'NOT_EXISTS')
+            elif header.startswith('PUT'):
+                _, filename, filesize, act = header.split(' ', 3)
+                save_file(client_socket, filename, int(filesize), act)
             elif header.startswith('DEL'):
                 _, filename = header.split(' ', 1)
                 del_file(filename, client_socket)
             elif header == "":
+                print("Disconnected")
                 break
 
         except Exception as e:

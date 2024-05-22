@@ -13,11 +13,10 @@ def start_client():
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
             client_socket.connect((host, port))
 
-            print('Подключение установлено')
+            print('Соединение с сервером установлено')
 
             while True:
-                show_main_menu()
-                choice = input_choice(4)
+                choice = show_main_menu()
 
                 if choice == 0:
                     prog_exit(client_socket)
@@ -25,14 +24,29 @@ def start_client():
                     show_file_list(get_file_list(client_socket))
                 elif choice == 2:
                     path = input_path_file()
-                    send_file(path, client_socket)
+                    if path:
+                        if check_local_file(path):
+                            filename = input_filename()
+                            if filename:
+                                mode = "WRITE"
+                                if check_server_file(filename, client_socket):
+                                    choice_fileexists = show_fileexists_menu()
+                                    if choice_fileexists == 0:
+                                        mode = ''
+                                    elif choice_fileexists == 1:
+                                        mode = "ADD"
+
+                                if mode == 'WRITE' or mode == 'ADD':
+                                    put_file(path, client_socket, mode, filename)
                 elif choice == 3:
-                    del_file(input_filename(), client_socket)
+                    filename = input_filename()
+                    if filename:
+                        del_file(filename, client_socket)
     except Exception as e:
         print(f"An error occurred: {e}")
 
 
-def show_main_menu() -> None:
+def show_main_menu() -> int:
     print()
     print('Главное меню:')
     print('0.Выйти')
@@ -40,6 +54,18 @@ def show_main_menu() -> None:
     print('2.Добавить файл')
     print('3.Удалить файл')
     print()
+    return input_choice(4)
+
+
+def show_fileexists_menu() -> int:
+    print()
+    print("Такой файл уже существует на сервере.")
+    print('Выберите действие:')
+    print('0.Отменить')
+    print('1.Дописать')
+    print('2.Заменить')
+    print()
+    return input_choice(3)
 
 
 def input_choice(max_choice_num: int) -> int | None:
@@ -50,13 +76,11 @@ def input_choice(max_choice_num: int) -> int | None:
 
 
 def input_path_file() -> str:
-    path = input("Введите путь к файлу:")
-    return path
+    return input("Введите путь к файлу:")
 
 
 def input_filename() -> str:
-    filename = input("Введите имя файла:")
-    return filename
+    return input("Введите имя файла на сервере :")
 
 
 def get_file_list(client_socket) -> list:
@@ -85,27 +109,37 @@ def show_file_list(files: list) -> None:
         print("Файлов нет")
 
 
-def send_file(path: str, client_socket) -> None:
-    if not os.path.isfile(path):
-        print("Такого файла не существует")
-        return None
+def check_local_file(path: str) -> bool:
+    fullpath = path + ".txt"
+    if not os.path.isfile(fullpath):
+        print(f"Локальный файл {fullpath} не найден")
+        return False
+    return True
 
-    client_socket.sendall(f'PUT {os.path.basename(path)} {os.path.getsize(path)}'.encode(encoding))
+
+def check_server_file(filename: str, client_socket) -> bool:
+    client_socket.sendall(f'CHECK {os.path.basename(filename)}'.encode(encoding))
     ack = client_socket.recv(1024).decode(encoding).strip()
 
-    if ack != 'ACK_FILENAME':
-        print("Filename exists")
-        return None
+    if ack == "EXISTS":
+        return True
 
-    with open(path, 'rb') as f:
+    return False
+
+
+def put_file(path: str, client_socket, mode: str, filename: str) -> None:
+    fullpath = path + ".txt"
+    client_socket.sendall(f'PUT {filename} {os.path.getsize(fullpath)} {mode}'.encode(encoding))
+
+    with open(fullpath, 'rb') as f:
         while chunk := f.read(1024):
             client_socket.sendall(chunk)
 
     ack = client_socket.recv(1024).decode(encoding).strip()
     if ack == 'SUCCESS':
-        print("File successfully transferred.")
+        print("Файл успешно отправлен.")
     else:
-        print("Failed to transfer file.")
+        print(get_error_message(ack))
 
 
 def del_file(filename: str, client_socket) -> None:
@@ -113,7 +147,7 @@ def del_file(filename: str, client_socket) -> None:
 
     ack = client_socket.recv(1024).decode(encoding)
     if ack == 'SUCCESS':
-        print("File successfully deleted.")
+        print("Файл успешно удален.")
     else:
         print(get_error_message(ack))
 
