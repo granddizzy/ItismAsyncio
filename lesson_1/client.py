@@ -1,8 +1,11 @@
 import socket
 import sys
+import os
 
 host = '127.0.0.1'
 port = 8020
+
+encoding = 'utf-8'
 
 
 def start_client():
@@ -22,9 +25,10 @@ def start_client():
                 elif choice == 1:
                     show_file_list(get_file_list(client_socket))
                 elif choice == 2:
-                    send_file(input_path_file())
+                    path = input_path_file()
+                    send_file(path, client_socket)
                 elif choice == 3:
-                    del_file(input_filename())
+                    del_file(input_filename(), client_socket)
     except Exception as e:
         print(f"An error occurred: {e}")
 
@@ -57,16 +61,14 @@ def input_filename() -> str:
 def get_file_list(client_socket) -> list:
     files_list = []
 
-    data = "0"
-    client_socket.send(data.encode('utf-8'))
+    client_socket.send(b'LIST')
 
-    data = client_socket.recv(1024).decode('utf-8')
+    data = client_socket.recv(1024).decode(encoding)
     while data:
         if 'END_OF_LIST' in data:
-            # print(data.replace('END_OF_LIST', '').strip())
             break
         files_list.append(data.strip())
-        data = client_socket.recv(1024).decode('utf-8')
+        data = client_socket.recv(1024).decode(encoding)
 
     return files_list
 
@@ -82,12 +84,37 @@ def show_file_list(files: list) -> None:
         print("Файлов нет")
 
 
-def send_file(path: str) -> None:
-    pass
+def send_file(path: str, client_socket) -> None:
+    if not os.path.isfile(path):
+        print("Такого файла не существует")
+        return None
+
+    client_socket.sendall(f'PUT {os.path.basename(path)} {os.path.getsize(path)}\n'.encode(encoding))
+    ack = client_socket.recv(1024).decode(encoding).strip()
+
+    if ack != 'ACK_FILENAME':
+        print("Filename exists")
+        return None
+
+    with open(path, 'rb') as f:
+        while chunk := f.read(1024):
+            client_socket.sendall(chunk)
+
+    ack = client_socket.recv(1024).decode(encoding).strip()
+    if ack == 'SUCCESS':
+        print("File successfully transferred.")
+    else:
+        print("Failed to transfer file.")
 
 
-def del_file(filename: str) -> None:
-    pass
+def del_file(filename: str, client_socket) -> None:
+    client_socket.sendall(f'DEL {filename}\n'.encode(encoding))
+
+    ack = client_socket.recv(1024).decode(encoding)
+    if ack == 'SUCCESS':
+        print("File successfully deleted.")
+    else:
+        print("Failed delete file.")
 
 
 if __name__ == "__main__":

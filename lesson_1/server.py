@@ -5,13 +5,14 @@ import os
 host = '127.0.0.1'
 port = 8020
 
-files_dir = "./"
+files_dir = './files'
 encoding = 'utf-8'
 
 
 def get_files_list() -> list:
     # return [f for f in os.listdir(files_dir) if os.path.isfile(f) and f.endswith('.txt')]
-    return [f for f in os.listdir(files_dir) if os.path.isfile(f)]
+    # return [f for f in os.listdir(files_dir) if os.path.isfile(f)]
+    return [f for f in os.listdir(files_dir)]
 
 
 def send_files_list(client_socket):
@@ -19,31 +20,58 @@ def send_files_list(client_socket):
     client_socket.sendall(b'\nEND_OF_LIST\n')
 
 
-def save_file(client_socket):
-    pass
+def save_file(client_socket, filename: str, filesize: int):
+    with open(files_dir + "/" + filename, 'wb') as f:
+        count = filesize // 1024 + 1
+
+        for i in range(1, count + 1):
+            data = client_socket.recv(1024)
+            f.write(data)
+    client_socket.sendall(b'SUCCESS')
+
+
+def check_filename(filename) -> bool:
+    return not os.path.exists(files_dir + "/" + filename)
 
 
 def get_file(client_socket):
     pass
 
 
+def del_file(filename: str, client_socket):
+    if os.path.exists(files_dir + "/" + filename):
+        os.remove(files_dir + "/" + filename)
+        client_socket.sendall(b'SUCCESS')
+    else:
+        client_socket.sendall(b'ERROR File not exist')
+
+
 def handle(client_socket):
     while True:
         try:
-            # начинаем принимать данные
-            oper = client_socket.recv(1).decode(encoding)  # первый байт - вид операции
+            header = client_socket.recv(1024).decode(encoding).strip()
 
-            if oper == "":
-                pass
-            elif oper == "0":  # запрос списка файлов
-                print("Запрос получения списка файлов")
+            if header.startswith('LIST'):
                 send_files_list(client_socket)
-            elif oper == "1":  # запрос получения файла
+            elif header.startswith('GET'):
                 get_file(client_socket)
-            elif oper == "2":  # запрос записи файла
-                save_file(client_socket)
+            elif header.startswith('PUT'):
+                _, filename, filesize = header.split(' ', 2)
+
+                if check_filename(filename):
+                    client_socket.sendall(b'ACK_FILENAME')
+                    save_file(client_socket, filename, int(filesize))
+                else:
+                    client_socket.sendall(b'ERROR File exists')
+            elif header.startswith('DEL'):
+                _, filename = header.split(' ', 1)
+                del_file(filename, client_socket)
+            elif header.startswith('QUIT'):
+                pass
             else:
-                print(f"Не верный вид операции {oper}")
+                print(f"Invalid header {header}")
+                client_socket.sendall(b'ERROR Invalid header')
+
 
         except Exception as e:
             print(f"An error occurred: {e}")
