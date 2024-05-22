@@ -20,8 +20,7 @@ def start_client():
                 choice = input_choice(4)
 
                 if choice == 0:
-                    print("До свидания!!!")
-                    sys.exit()
+                    prog_exit(client_socket)
                 elif choice == 1:
                     show_file_list(get_file_list(client_socket))
                 elif choice == 2:
@@ -34,11 +33,13 @@ def start_client():
 
 
 def show_main_menu() -> None:
-    print('Выберите вариант:')
+    print()
+    print('Главное меню:')
     print('0.Выйти')
     print('1.Получить список файлов')
     print('2.Добавить файл')
     print('3.Удалить файл')
+    print()
 
 
 def input_choice(max_choice_num: int) -> int | None:
@@ -89,7 +90,7 @@ def send_file(path: str, client_socket) -> None:
         print("Такого файла не существует")
         return None
 
-    client_socket.sendall(f'PUT {os.path.basename(path)} {os.path.getsize(path)}\n'.encode(encoding))
+    client_socket.sendall(f'PUT {os.path.basename(path)} {os.path.getsize(path)}'.encode(encoding))
     ack = client_socket.recv(1024).decode(encoding).strip()
 
     if ack != 'ACK_FILENAME':
@@ -108,13 +109,24 @@ def send_file(path: str, client_socket) -> None:
 
 
 def del_file(filename: str, client_socket) -> None:
-    client_socket.sendall(f'DEL {filename}\n'.encode(encoding))
+    client_socket.sendall(f'DEL {filename}'.encode(encoding))
 
     ack = client_socket.recv(1024).decode(encoding)
     if ack == 'SUCCESS':
         print("File successfully deleted.")
     else:
-        print("Failed delete file.")
+        print(get_error_message(ack))
+
+
+def prog_exit(client_socket):
+    client_socket.shutdown(socket.SHUT_RDWR)
+    client_socket.close()
+    print("До свидания!!!")
+    sys.exit()
+
+
+def get_error_message(msg):
+    return msg.split(' ', 1)[1]
 
 
 if __name__ == "__main__":

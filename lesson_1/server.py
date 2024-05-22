@@ -17,7 +17,7 @@ def get_files_list() -> list:
 
 def send_files_list(client_socket):
     client_socket.sendall('\n'.join(get_files_list()).encode())
-    client_socket.sendall(b'\nEND_OF_LIST\n')
+    client_socket.sendall(b'\nEND_OF_LIST')
 
 
 def save_file(client_socket, filename: str, filesize: int):
@@ -31,7 +31,7 @@ def save_file(client_socket, filename: str, filesize: int):
 
 
 def check_filename(filename) -> bool:
-    return not os.path.exists(files_dir + "/" + filename)
+    return os.path.exists(files_dir + "/" + filename)
 
 
 def get_file(client_socket):
@@ -39,7 +39,7 @@ def get_file(client_socket):
 
 
 def del_file(filename: str, client_socket):
-    if os.path.exists(files_dir + "/" + filename):
+    if check_filename(filename):
         os.remove(files_dir + "/" + filename)
         client_socket.sendall(b'SUCCESS')
     else:
@@ -58,7 +58,7 @@ def handle(client_socket):
             elif header.startswith('PUT'):
                 _, filename, filesize = header.split(' ', 2)
 
-                if check_filename(filename):
+                if not check_filename(filename):
                     client_socket.sendall(b'ACK_FILENAME')
                     save_file(client_socket, filename, int(filesize))
                 else:
@@ -66,12 +66,8 @@ def handle(client_socket):
             elif header.startswith('DEL'):
                 _, filename = header.split(' ', 1)
                 del_file(filename, client_socket)
-            elif header.startswith('QUIT'):
-                pass
-            else:
-                print(f"Invalid header {header}")
-                client_socket.sendall(b'ERROR Invalid header')
-
+            elif header == "":
+                break
 
         except Exception as e:
             print(f"An error occurred: {e}")
