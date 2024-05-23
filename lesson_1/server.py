@@ -1,12 +1,15 @@
 import socket
 import threading
 import os
+import time
 
 host = '127.0.0.1'
 port = 8020
 
 files_dir = './files'
 encoding = 'utf-8'
+
+clients = []
 
 
 def get_files_list() -> list:
@@ -75,13 +78,9 @@ def handle(client_socket):
             elif header.startswith('DEL'):
                 _, filename = header.split(' ', 1)
                 del_file(filename, client_socket)
-            elif header == "":
-                print("Disconnected")
-                break
 
         except Exception as e:
             print(f"An error occurred: {e}")
-            client_socket.close()
             break
 
 
@@ -94,6 +93,8 @@ def start_server():
 
         while True:
             client_socket, _ = server_socket.accept()
+            clients.append(client_socket)
+
             client_thread = threading.Thread(target=handle, args=(client_socket,))
             client_thread.start()
 
