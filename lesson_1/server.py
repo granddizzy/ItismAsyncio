@@ -1,26 +1,27 @@
 import socket
 import threading
 import os
+import re
 
 host = '127.0.0.1'
 port = 8020
 
 files_dir = './files'
 encoding = 'utf-8'
-
+forbidden_chars = r'[\\/:"*?<>|]'
 clients = []
 
 
 def get_files_list() -> list:
     # return [f for f in os.listdir(files_dir) if os.path.isfile(f) and f.endswith('.txt')]
     # return [f for f in os.listdir(files_dir) if os.path.isfile(f)]
-    return [f"{f} {os.path.getsize(os.path.join(files_dir, f))}" for f in os.listdir(files_dir)]
+    return [f"{f}:{os.path.getsize(os.path.join(files_dir, f))}" for f in os.listdir(files_dir)]
 
 
 def send_files_list(client_socket):
-    data = '\n'.join(get_files_list()).encode()
+    data = '\n'.join(get_files_list()).encode(encoding)
     datasize = len(data)
-    header = f'LIST {datasize}'.encode(encoding).ljust(1024, b' ')
+    header = f'LIST\n{datasize}'.encode(encoding).ljust(1024, b' ')
     client_socket.sendall(header)
     client_socket.sendall(data)
 
@@ -44,23 +45,23 @@ def put_file(client_socket, filename: str, filesize: int, act: str):
     with open(os.path.join(files_dir, filename) + ".txt", mode) as f:
         f.write(buffer)
 
-    client_socket.sendall(b'SUCCESS')
+    client_socket.sendall(b'SUCCESS'.ljust(1024, b' '))
 
 
 def check_filename(filename) -> bool:
     return os.path.exists(os.path.join(files_dir, filename) + ".txt")
 
 
-def get_file(client_socket):
+def get_file(client_socket, filename):
     pass
 
 
 def del_file(filename: str, client_socket):
     if check_filename(filename):
         os.remove(os.path.join(files_dir, filename) + ".txt")
-        client_socket.sendall(b'SUCCESS')
+        client_socket.sendall(b'SUCCESS'.ljust(1024, b' '))
     else:
-        client_socket.sendall(b'ERROR File not exist')
+        client_socket.sendall(b'ERROR\nFile not exist'.ljust(1024, b' '))
 
 
 def handle(client_socket):
@@ -71,18 +72,25 @@ def handle(client_socket):
             if header.startswith('LIST'):
                 send_files_list(client_socket)
             elif header.startswith('GET'):
-                get_file(client_socket)
-            elif header.startswith('CHECK'):
-                _, filename = header.split(' ', 1)
+                _, filename = header.split('\n', 1)
                 if check_filename(filename):
-                    client_socket.sendall(b'EXISTS')
+                    get_file(client_socket, filename)
                 else:
-                    client_socket.sendall(b'NOT_EXISTS')
+                    client_socket.sendall(b'ERROR\nFile not exists'.ljust(1024, b' '))
+            elif header.startswith('CHECK'):
+                _, filename = header.split('\n', 1)
+                if check_filename(filename):
+                    client_socket.sendall(b'EXISTS'.ljust(1024, b' '))
+                else:
+                    client_socket.sendall(b'NOT_EXISTS'.ljust(1024, b' '))
             elif header.startswith('PUT'):
-                _, filename, filesize, act = header.split(' ', 3)
-                put_file(client_socket, filename, int(filesize), act)
+                _, filename, filesize, act = header.split('\n', 3)
+                if not re.search(forbidden_chars, filename):
+                    put_file(client_socket, filename, int(filesize), act)
+                else:
+                    client_socket.sendall(b'ERROR\nForbidden chars'.ljust(1024, b' '))
             elif header.startswith('DEL'):
-                _, filename = header.split(' ', 1)
+                _, filename = header.split('\n', 1)
                 del_file(filename, client_socket)
 
         except Exception as e:
