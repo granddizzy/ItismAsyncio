@@ -1,7 +1,6 @@
 import socket
 import threading
 import os
-import time
 
 host = '127.0.0.1'
 port = 8020
@@ -21,22 +20,29 @@ def get_files_list() -> list:
 def send_files_list(client_socket):
     data = '\n'.join(get_files_list()).encode()
     datasize = len(data)
-    client_socket.sendall(f'ACK {datasize}'.encode(encoding))
+    header = f'LIST {datasize}'.encode(encoding).ljust(1024, b' ')
+    client_socket.sendall(header)
     client_socket.sendall(data)
 
 
-def save_file(client_socket, filename: str, filesize: int, act: str):
+def put_file(client_socket, filename: str, filesize: int, act: str):
     mode = 'wb'
 
     if check_filename(filename) and act == 'ADD':
         mode = 'ab'
 
-    with open(os.path.join(files_dir, filename) + ".txt", mode) as f:
-        count = filesize // 1024 + 1
+    buffer = b''
+    count = 0
+    if filesize > 1024:
+        count = filesize // 1024
+    bytes_remainder = filesize - 1024 * count
+    for i in range(1, count + 1):
+        buffer += client_socket.recv(1024)
+    if bytes_remainder:
+        buffer += client_socket.recv(bytes_remainder)
 
-        for i in range(1, count + 1):
-            data = client_socket.recv(1024)
-            f.write(data)
+    with open(os.path.join(files_dir, filename) + ".txt", mode) as f:
+        f.write(buffer)
 
     client_socket.sendall(b'SUCCESS')
 
@@ -74,7 +80,7 @@ def handle(client_socket):
                     client_socket.sendall(b'NOT_EXISTS')
             elif header.startswith('PUT'):
                 _, filename, filesize, act = header.split(' ', 3)
-                save_file(client_socket, filename, int(filesize), act)
+                put_file(client_socket, filename, int(filesize), act)
             elif header.startswith('DEL'):
                 _, filename = header.split(' ', 1)
                 del_file(filename, client_socket)
