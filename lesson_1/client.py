@@ -2,6 +2,7 @@ import socket
 import sys
 import os
 import re
+from datetime import datetime
 
 host = '127.0.0.1'
 port = 8020
@@ -31,7 +32,7 @@ def is_connected(client_socket: socket.socket) -> bool:
 
 def check_connection(client_socket) -> socket.socket:
     if not client_socket or not is_connected(client_socket):
-        print("Соединение с сервером не установлено. Переподключение...")
+        print("Соединение с сервером потеряно. Переподключение...")
 
         if client_socket:
             client_socket.close()
@@ -161,12 +162,13 @@ def get_file_list(client_socket) -> list:
 
 def show_file_list(files: list) -> None:
     print("\n" + "=" * 83)
-    print(f"{'Имя файла':<40} {'Размер':<10}")
+    print(f"{'Имя файла':<40} {'Размер':<10} {'Изменен':<10}")
     print("=" * 83)
     if files:
         for filedata in files:
-            filename, filesize = filedata.split(':', 1)
-            print(f"{filename:<40} {filesize:<10}")
+            filename, filesize, modified = filedata.split(':', 2)
+            modified_date = datetime.fromtimestamp(int(modified)).strftime('%Y-%m-%d %H:%M:%S')
+            print(f"{filename:<40} {filesize:<10} {modified_date:<10}")
     else:
         print("Файлов нет")
     print("=" * 83 + "\n")
@@ -186,7 +188,7 @@ def check_server_file(filename: str, client_socket) -> bool:
     if client_socket := check_connection(client_socket):
         try:
             client_socket.settimeout(5)
-            client_socket.sendall(f'CHECK\n{os.path.basename(filename)}'.encode(encoding).ljust(512, b' '))
+            client_socket.sendall(f'CHECK\n{filename}'.encode(encoding).ljust(512, b' '))
             ack = client_socket.recv(512).decode(encoding).strip()
         except socket.timeout:
             print("Долгий ответ от сервера")

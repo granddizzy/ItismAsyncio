@@ -2,6 +2,7 @@ import socket
 import threading
 import os
 import re
+from pathlib import Path
 
 host = '127.0.0.1'
 port = 8020
@@ -14,8 +15,10 @@ clients = []
 
 def get_files_list() -> list:
     # return [f for f in os.listdir(files_dir) if os.path.isfile(f) and f.endswith('.txt')]
-    # return [f for f in os.listdir(files_dir) if os.path.isfile(f)]
-    return [f"{f}:{os.path.getsize(os.path.join(files_dir, f))}" for f in os.listdir(files_dir)]
+    # return [f for f in os.listdir(files_dir) if os.path.isfile(f)]:{os.path.getmtime(f)}
+    return [
+        f"{Path(f).stem}:{os.path.getsize(os.path.join(files_dir, f))}:{int(os.path.getmtime(os.path.join(files_dir, f)))}"
+        for f in os.listdir(files_dir) if os.path.isfile(os.path.join(files_dir, f))]
 
 
 def send_files_list(client_socket):
@@ -110,7 +113,7 @@ def start_server():
 
         while True:
             client_socket, client_address = server_socket.accept()
-            #clients.append(client_socket)
+            # clients.append(client_socket)
 
             print(f"Connected {client_address}")
             client_thread = threading.Thread(target=handle, args=(client_socket, client_address))
