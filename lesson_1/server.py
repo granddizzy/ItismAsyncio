@@ -42,10 +42,13 @@ def put_file(client_socket, filename: str, filesize: int, act: str):
     if bytes_remainder:
         buffer += client_socket.recv(bytes_remainder)
 
-    with open(os.path.join(files_dir, filename) + ".txt", mode) as f:
-        f.write(buffer)
+    if buffer:
+        with open(os.path.join(files_dir, filename) + ".txt", mode) as f:
+            f.write(buffer)
 
-    client_socket.sendall(get_byte_header('SUCCESS'))
+        client_socket.sendall(get_byte_header('SUCCESS'))
+    else:
+        client_socket.sendall(get_byte_header('ERROR', 'No data'))
 
 
 def check_filename(filename) -> bool:
@@ -110,20 +113,32 @@ def handle(client_socket, client_address):
             print(f"An error occurred: {e}")
 
 
+def check_directory() -> bool:
+    try:
+        if not os.path.exists(files_dir):
+            os.makedirs(files_dir)
+    except OSError as e:
+        print(f"Ошибка при создании каталога '{files_dir}': {e}")
+        return False
+
+    return True
+
+
 def start_server():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
-        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server_socket.bind((host, port))
-        server_socket.listen()
-        print(f"Server is listening on {host}:{port}")
+    if check_directory():
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
+            server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            server_socket.bind((host, port))
+            server_socket.listen()
+            print(f"Server is listening on {host}:{port}")
 
-        while True:
-            client_socket, client_address = server_socket.accept()
-            # clients.append(client_socket)
+            while True:
+                client_socket, client_address = server_socket.accept()
+                # clients.append(client_socket)
 
-            print(f"Connected {client_address[0]}:{client_address[1]}")
-            client_thread = threading.Thread(target=handle, args=(client_socket, client_address))
-            client_thread.start()
+                print(f"Connected {client_address[0]}:{client_address[1]}")
+                client_thread = threading.Thread(target=handle, args=(client_socket, client_address))
+                client_thread.start()
 
 
 if __name__ == "__main__":

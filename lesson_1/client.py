@@ -179,6 +179,9 @@ def check_local_file(path: str) -> bool:
     if not os.path.isfile(fullpath):
         print(f"Локальный файл {fullpath} не найден")
         return False
+    elif os.path.getsize(fullpath) == 0:
+        print(f"Локальный файл {fullpath} пустой")
+        return False
     return True
 
 
