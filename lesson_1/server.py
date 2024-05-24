@@ -15,7 +15,6 @@ clients = []
 
 def get_files_list() -> list:
     # return [f for f in os.listdir(files_dir) if os.path.isfile(f) and f.endswith('.txt')]
-    # return [f for f in os.listdir(files_dir) if os.path.isfile(f)]:{os.path.getmtime(f)}
     return [
         f"{Path(f).stem}:{os.path.getsize(os.path.join(files_dir, f))}:{int(os.path.getmtime(os.path.join(files_dir, f)))}"
         for f in os.listdir(files_dir) if os.path.isfile(os.path.join(files_dir, f))]
@@ -23,9 +22,7 @@ def get_files_list() -> list:
 
 def send_files_list(client_socket):
     data = '\n'.join(get_files_list()).encode(encoding)
-    datasize = len(data)
-    header = f'LIST\n{datasize}'.encode(encoding).ljust(512, b' ')
-    client_socket.sendall(header)
+    client_socket.sendall(get_byte_header('LIST', str(len(data))))
     client_socket.sendall(data)
 
 
@@ -48,7 +45,7 @@ def put_file(client_socket, filename: str, filesize: int, act: str):
     with open(os.path.join(files_dir, filename) + ".txt", mode) as f:
         f.write(buffer)
 
-    client_socket.sendall(b'SUCCESS'.ljust(512, b' '))
+    client_socket.sendall(get_byte_header('SUCCESS'))
 
 
 def check_filename(filename) -> bool:
@@ -62,13 +59,17 @@ def get_file(client_socket, filename):
 def del_file(filename: str, client_socket):
     if check_filename(filename):
         os.remove(os.path.join(files_dir, filename) + ".txt")
-        client_socket.sendall(b'SUCCESS'.ljust(512, b' '))
+        client_socket.sendall(get_byte_header('SUCCESS'))
     else:
-        client_socket.sendall(b'ERROR\nFile not exist'.ljust(512, b' '))
+        client_socket.sendall(get_byte_header('ERROR', 'File not exists'))
+
+
+def get_byte_header(*args: str) -> bin:
+    return '\n'.join(args).encode(encoding).ljust(512, b' ')
 
 
 def handle(client_socket, client_address):
-    client_socket.settimeout(60)
+    client_socket.settimeout(300)
     while True:
         try:
             header = client_socket.recv(512).decode(encoding).strip()
@@ -80,24 +81,29 @@ def handle(client_socket, client_address):
                 if check_filename(filename):
                     get_file(client_socket, filename)
                 else:
-                    client_socket.sendall(b'ERROR\nFile not exists'.ljust(512, b' '))
+                    client_socket.sendall(get_byte_header('ERROR', 'File not exists'))
             elif header.startswith('CHECK'):
                 _, filename = header.split('\n', 1)
                 if check_filename(filename):
-                    client_socket.sendall(b'EXISTS'.ljust(512, b' '))
+                    client_socket.sendall(get_byte_header('EXISTS'))
                 else:
-                    client_socket.sendall(b'NOT_EXISTS'.ljust(512, b' '))
+                    client_socket.sendall(get_byte_header('NOT_EXISTS'))
             elif header.startswith('PUT'):
                 _, filename, filesize, act = header.split('\n', 3)
                 if not re.search(forbidden_chars, filename):
                     put_file(client_socket, filename, int(filesize), act)
                 else:
-                    client_socket.sendall(b'ERROR\nForbidden chars'.ljust(512, b' '))
+                    client_socket.sendall(get_byte_header('ERROR', 'Forbidden chars'))
             elif header.startswith('DEL'):
                 _, filename = header.split('\n', 1)
                 del_file(filename, client_socket)
+            elif header.startswith('QUIT'):
+                print(f"Disconnected {client_address[0]}:{client_address[1]}")
+                client_socket.close()
+                break
+
         except (socket.timeout, ConnectionError, socket.error):
-            print(f"Disconnected {client_address}")
+            print(f"Auto disconnected {client_address[0]}:{client_address[1]}")
             client_socket.close()
             break
         except Exception as e:
@@ -115,7 +121,7 @@ def start_server():
             client_socket, client_address = server_socket.accept()
             # clients.append(client_socket)
 
-            print(f"Connected {client_address}")
+            print(f"Connected {client_address[0]}:{client_address[1]}")
             client_thread = threading.Thread(target=handle, args=(client_socket, client_address))
             client_thread.start()
 

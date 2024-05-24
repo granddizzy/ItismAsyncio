@@ -24,7 +24,7 @@ def set_connection(host, port) -> socket.socket | None:
 def is_connected(client_socket: socket.socket) -> bool:
     try:
         client_socket.settimeout(5)
-        client_socket.sendall(b'TEST'.ljust(512, b' '))
+        client_socket.sendall(get_byte_header('TEST'))
         return True
     except (socket.timeout, ConnectionError, socket.error):
         return False
@@ -115,7 +115,7 @@ def input_choice(max_choice_num: int) -> int | None:
 
 
 def input_path_file() -> str:
-    return input("Введите путь к файлу:")
+    return input("Введите путь к текстовому файлу на вашем компьютере (имя файла без расширения):")
 
 
 def input_filename() -> str:
@@ -134,7 +134,7 @@ def get_file_list(client_socket) -> list:
         header = ''
         try:
             client_socket.settimeout(10)
-            client_socket.sendall(b'LIST'.ljust(512, b' '))
+            client_socket.sendall(get_byte_header('LIST'))
             header = client_socket.recv(512).decode(encoding).strip()
         except socket.timeout:
             print("Долгий ответ от сервера")
@@ -188,7 +188,8 @@ def check_server_file(filename: str, client_socket) -> bool:
     if client_socket := check_connection(client_socket):
         try:
             client_socket.settimeout(5)
-            client_socket.sendall(f'CHECK\n{filename}'.encode(encoding).ljust(512, b' '))
+            client_socket.sendall(get_byte_header('CHECK', filename))
+
             ack = client_socket.recv(512).decode(encoding).strip()
         except socket.timeout:
             print("Долгий ответ от сервера")
@@ -208,8 +209,7 @@ def put_file(path: str, client_socket, mode: str, filename: str) -> None:
         try:
             client_socket.settimeout(None)
             fullpath = path + ".txt"
-            client_socket.sendall(
-                f'PUT\n{filename}\n{os.path.getsize(fullpath)}\n{mode}'.encode(encoding).ljust(512, b' '))
+            client_socket.sendall(get_byte_header('PUT', filename, str(os.path.getsize(fullpath)), mode))
 
             with open(fullpath, 'rb') as f:
                 while chunk := f.read(1024):
@@ -234,7 +234,7 @@ def del_file(filename: str, client_socket) -> None:
     if client_socket := check_connection(client_socket):
         try:
             client_socket.settimeout(5)
-            client_socket.sendall(f'CHECK\n{filename}'.encode(encoding).ljust(512, b' '))
+            client_socket.sendall(get_byte_header('CHECK', filename))
 
             ack = client_socket.recv(512).decode(encoding).strip()
             if ack.startswith("NOT_EXISTS"):
@@ -242,7 +242,8 @@ def del_file(filename: str, client_socket) -> None:
                 return None
 
             ack = ''
-            client_socket.sendall(f'DEL\n{filename}'.encode(encoding).ljust(512, b' '))
+
+            client_socket.sendall(get_byte_header('DEL', filename))
             ack = client_socket.recv(512).decode(encoding).strip()
 
         except socket.timeout:
@@ -258,7 +259,13 @@ def del_file(filename: str, client_socket) -> None:
 
 def prog_exit(client_socket):
     if client_socket:
-        client_socket.shutdown(socket.SHUT_RDWR)
+        if is_connected(client_socket):
+            try:
+                client_socket.sendall(get_byte_header('QUIT'))
+                client_socket.shutdown(socket.SHUT_RDWR)
+            except (ConnectionError, socket.error):
+                pass
+
         client_socket.close()
     print("До свидания!!!")
     sys.exit()
@@ -266,6 +273,10 @@ def prog_exit(client_socket):
 
 def get_error_message(msg):
     return msg.split('\n', 1)[1]
+
+
+def get_byte_header(*args) -> bin:
+    return '\n'.join(args).encode(encoding).ljust(512, b' ')
 
 
 if __name__ == "__main__":
