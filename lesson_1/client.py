@@ -13,18 +13,19 @@ forbidden_chars = r'[\\/:"*?<>|]'
 def set_connection(host, port) -> socket.socket | None:
     try:
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client_socket.settimeout(5)
         client_socket.connect((host, port))
         return client_socket
-    except (ConnectionError, socket.error):
+    except (socket.timeout, ConnectionError, socket.error):
         return None
 
 
 def is_connected(client_socket: socket.socket) -> bool:
     try:
         client_socket.settimeout(5)
-        client_socket.sendall(b'TEST'.ljust(1024, b' '))
+        client_socket.sendall(b'TEST'.ljust(512, b' '))
         return True
-    except (ConnectionError, socket.error):
+    except (socket.timeout, ConnectionError, socket.error):
         return False
 
 
@@ -50,34 +51,37 @@ def start_client():
         print("Соединение с сервером не установлено.")
 
     while True:
-        choice = show_main_menu()
+        try:
+            choice = show_main_menu()
 
-        if choice == 0:
-            prog_exit(client_socket)
-        elif choice in (1, 2, 3):
-            if client_socket := check_connection(client_socket):
-                if choice == 1:
-                    show_file_list(get_file_list(client_socket))
-                elif choice == 2:
-                    path = input_path_file()
-                    if path:
-                        if check_local_file(path):
-                            filename = input_filename()
-                            if filename:
-                                mode = "WRITE"
-                                if check_server_file(filename, client_socket):
-                                    choice_fileexists = show_fileexists_menu()
-                                    if choice_fileexists == 0:
-                                        mode = ''
-                                    elif choice_fileexists == 1:
-                                        mode = "ADD"
+            if choice == 0:
+                prog_exit(client_socket)
+            elif choice in (1, 2, 3):
+                if client_socket := check_connection(client_socket):
+                    if choice == 1:
+                        show_file_list(get_file_list(client_socket))
+                    elif choice == 2:
+                        path = input_path_file()
+                        if path:
+                            if check_local_file(path):
+                                filename = input_filename()
+                                if filename:
+                                    mode = "WRITE"
+                                    if check_server_file(filename, client_socket):
+                                        choice_fileexists = show_fileexists_menu()
+                                        if choice_fileexists == 0:
+                                            mode = ''
+                                        elif choice_fileexists == 1:
+                                            mode = "ADD"
 
-                                if mode == 'WRITE' or mode == 'ADD':
-                                    put_file(path, client_socket, mode, filename)
-                elif choice == 3:
-                    filename = input_filename()
-                    if filename:
-                        del_file(filename, client_socket)
+                                    if mode == 'WRITE' or mode == 'ADD':
+                                        put_file(path, client_socket, mode, filename)
+                    elif choice == 3:
+                        filename = input_filename()
+                        if filename:
+                            del_file(filename, client_socket)
+        except Exception as e:
+            print(f"An error occurred: {e}")
 
 
 def show_main_menu() -> int:
@@ -126,9 +130,16 @@ def get_file_list(client_socket) -> list:
     files_list = []
 
     if client_socket := check_connection(client_socket):
-        client_socket.settimeout(10)
-        client_socket.sendall(b'LIST'.ljust(1024, b' '))
-        header = client_socket.recv(1024).decode(encoding).strip()
+        header = ''
+        try:
+            client_socket.settimeout(10)
+            client_socket.sendall(b'LIST'.ljust(512, b' '))
+            header = client_socket.recv(512).decode(encoding).strip()
+        except socket.timeout:
+            print("Долгий ответ от сервера")
+        except (ConnectionError, socket.error):
+            pass
+
         if header.startswith('LIST'):
             _, filesize = header.split('\n', 1)
 
@@ -142,7 +153,8 @@ def get_file_list(client_socket) -> list:
             if bytes_remainder:
                 buffer += client_socket.recv(bytes_remainder)
 
-            files_list = buffer.split(b'\n')
+            if buffer:
+                files_list = buffer.split(b'\n')
 
     return list(map(lambda x: x.decode(encoding), files_list))
 
@@ -169,11 +181,18 @@ def check_local_file(path: str) -> bool:
 
 
 def check_server_file(filename: str, client_socket) -> bool:
-    if client_socket := check_connection(client_socket):
-        client_socket.settimeout(5)
-        client_socket.sendall(f'CHECK\n{os.path.basename(filename)}'.encode(encoding).ljust(1024, b' '))
+    ack = ''
 
-        ack = client_socket.recv(1024).decode(encoding).strip()
+    if client_socket := check_connection(client_socket):
+        try:
+            client_socket.settimeout(5)
+            client_socket.sendall(f'CHECK\n{os.path.basename(filename)}'.encode(encoding).ljust(512, b' '))
+            ack = client_socket.recv(512).decode(encoding).strip()
+        except socket.timeout:
+            print("Долгий ответ от сервера")
+        except (ConnectionError, socket.error):
+            pass
+
         if ack.startswith("EXISTS"):
             return True
 
@@ -181,44 +200,55 @@ def check_server_file(filename: str, client_socket) -> bool:
 
 
 def put_file(path: str, client_socket, mode: str, filename: str) -> None:
+    ack = ''
+
     if client_socket := check_connection(client_socket):
-        client_socket.settimeout(None)
-        fullpath = path + ".txt"
-        client_socket.sendall(
-            f'PUT\n{filename}\n{os.path.getsize(fullpath)}\n{mode}'.encode(encoding).ljust(1024, b' '))
+        try:
+            client_socket.settimeout(None)
+            fullpath = path + ".txt"
+            client_socket.sendall(
+                f'PUT\n{filename}\n{os.path.getsize(fullpath)}\n{mode}'.encode(encoding).ljust(512, b' '))
 
-        with open(fullpath, 'rb') as f:
-            while chunk := f.read(1024):
-                client_socket.sendall(chunk)
+            with open(fullpath, 'rb') as f:
+                while chunk := f.read(1024):
+                    client_socket.sendall(chunk)
 
-        client_socket.settimeout(5)
-        ack = client_socket.recv(1024).decode(encoding).strip()
-        if ack == '':
+            client_socket.settimeout(5)
+            ack = client_socket.recv(512).decode(encoding).strip()
+        except socket.timeout:
             print("Долгий ответ от сервера")
-        elif ack.startswith('SUCCESS'):
+        except (ConnectionError, socket.error):
+            pass
+
+        if ack.startswith('SUCCESS'):
             print("Файл успешно добавлен.")
         elif ack.startswith('ERROR'):
             print(get_error_message(ack))
 
 
 def del_file(filename: str, client_socket) -> None:
+    ack = ''
+
     if client_socket := check_connection(client_socket):
-        client_socket.settimeout(5)
-        client_socket.sendall(f'CHECK\n{filename}'.encode(encoding).ljust(1024, b' '))
-        ack = client_socket.recv(1024).decode(encoding).strip()
+        try:
+            client_socket.settimeout(5)
+            client_socket.sendall(f'CHECK\n{filename}'.encode(encoding).ljust(512, b' '))
 
-        if ack == '':
-            print("Долгий ответ от сервера")
-            return None
-        elif ack.startswith("NOT_EXISTS"):
-            print(f"Файла {filename} нет на сервере")
-            return None
+            ack = client_socket.recv(512).decode(encoding).strip()
+            if ack.startswith("NOT_EXISTS"):
+                print(f"Файла {filename} нет на сервере")
+                return None
 
-        client_socket.sendall(f'DEL\n{filename}'.encode(encoding).ljust(1024, b' '))
-        ack = client_socket.recv(1024).decode(encoding).strip()
-        if ack == '':
+            ack = ''
+            client_socket.sendall(f'DEL\n{filename}'.encode(encoding).ljust(512, b' '))
+            ack = client_socket.recv(512).decode(encoding).strip()
+
+        except socket.timeout:
             print("Долгий ответ от сервера")
-        elif ack.startswith('SUCCESS'):
+        except (ConnectionError, socket.error):
+            pass
+
+        if ack.startswith('SUCCESS'):
             print("Файл успешно удален.")
         elif ack.startswith('ERROR'):
             print(get_error_message(ack))
