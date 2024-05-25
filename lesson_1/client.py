@@ -54,12 +54,14 @@ def check_connection() -> bool:
     return True
 
 
-def get_mode_fileexists(choice: int) -> str:
+def get_mode_fileexists(filename: str) -> str:
     mode = "WRITE"
-    if choice == 0:
-        mode = ''
-    elif choice == 1:
-        mode = "ADD"
+    if check_server_file(filename):
+        choice = show_fileexists_menu()
+        if choice == 0:
+            mode = ''
+        elif choice == 1:
+            mode = "ADD"
     return mode
 
 
@@ -78,13 +80,9 @@ def start_client():
                     if choice == 1:
                         show_file_list(get_file_list())
                     elif choice == 2:
-                        if (path := input_path_file()) and check_local_file(path):
-                            if filename := input_filename():
-                                mode = "WRITE"
-                                if check_server_file(filename):
-                                    mode = get_mode_fileexists(show_fileexists_menu())
-                                if mode in ['WRITE', 'ADD']:
-                                    put_file(path, mode, filename)
+                        if (path := input_path_file()) and (filename := input_filename()):
+                            if (mode := get_mode_fileexists(filename)) in ['WRITE', 'ADD']:
+                                put_file(path, mode, filename)
                     elif choice == 3:
                         if filename := input_filename():
                             del_file(filename)
@@ -122,7 +120,10 @@ def input_choice(max_choice_num: int) -> int | None:
 
 
 def input_path_file() -> str:
-    return input("Введите путь к текстовому файлу на вашем компьютере (имя файла без расширения):")
+    while True:
+        path = input("Введите путь к текстовому файлу на вашем компьютере (имя файла без расширения):")
+        if not path or check_local_file(path):
+            return path
 
 
 def input_filename() -> str:
