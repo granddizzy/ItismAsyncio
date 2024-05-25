@@ -10,7 +10,9 @@ port = 8020
 files_dir = './files'
 encoding = 'utf-8'
 forbidden_chars = r'[\\/:"*?<>|]'
-clients = []
+
+
+# clients = []
 
 
 def get_files_list() -> list:

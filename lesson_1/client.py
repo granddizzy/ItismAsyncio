@@ -22,6 +22,9 @@ def set_connection(host: str, port: int) -> socket.socket | None:
 
 
 def is_connected(client_socket: socket.socket) -> bool:
+    if not client_socket:
+        return False
+
     try:
         client_socket.settimeout(5)
         client_socket.sendall(get_byte_header('TEST'))
@@ -31,7 +34,7 @@ def is_connected(client_socket: socket.socket) -> bool:
 
 
 def check_connection(client_socket: socket.socket) -> socket.socket:
-    if not client_socket or not is_connected(client_socket):
+    if not is_connected(client_socket):
         print("Соединение с сервером потеряно. Переподключение...")
 
         if client_socket:
@@ -131,7 +134,6 @@ def get_file_list(client_socket: socket.socket) -> list:
     files_list = []
 
     if client_socket := check_connection(client_socket):
-        header = ''
         try:
             client_socket.settimeout(10)
             client_socket.sendall(get_byte_header('LIST'))
@@ -187,8 +189,6 @@ def check_local_file(path: str) -> bool:
 
 
 def check_server_file(filename: str, client_socket: socket.socket) -> bool:
-    ack = ''
-
     if client_socket := check_connection(client_socket):
         try:
             client_socket.settimeout(5)
@@ -208,8 +208,6 @@ def check_server_file(filename: str, client_socket: socket.socket) -> bool:
 
 
 def put_file(path: str, client_socket: socket.socket, mode: str, filename: str) -> None:
-    ack = ''
-
     if client_socket := check_connection(client_socket):
         try:
             client_socket.settimeout(None)
@@ -224,8 +222,9 @@ def put_file(path: str, client_socket: socket.socket, mode: str, filename: str) 
             ack = client_socket.recv(512).decode(encoding).strip()
         except socket.timeout:
             print("Долгий ответ от сервера")
+            return None
         except (ConnectionError, socket.error):
-            pass
+            return None
 
         if ack.startswith('SUCCESS'):
             print("Файл успешно добавлен.")
@@ -234,8 +233,6 @@ def put_file(path: str, client_socket: socket.socket, mode: str, filename: str) 
 
 
 def del_file(filename: str, client_socket: socket.socket) -> None:
-    ack = ''
-
     if client_socket := check_connection(client_socket):
         try:
             client_socket.settimeout(5)
@@ -245,8 +242,6 @@ def del_file(filename: str, client_socket: socket.socket) -> None:
             if ack.startswith("NOT_EXISTS"):
                 print(f"Файла {filename} нет на сервере")
                 return None
-
-            ack = ''
 
             client_socket.sendall(get_byte_header('DEL', filename))
             ack = client_socket.recv(512).decode(encoding).strip()
@@ -258,7 +253,7 @@ def del_file(filename: str, client_socket: socket.socket) -> None:
             return None
 
         if ack.startswith('SUCCESS'):
-            print("Файл успешно удален.")
+            print(f"Файл {filename} успешно удален.")
         elif ack.startswith('ERROR'):
             print(get_error_message(ack))
 
