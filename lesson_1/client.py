@@ -138,8 +138,9 @@ def get_file_list(client_socket) -> list:
             header = client_socket.recv(512).decode(encoding).strip()
         except socket.timeout:
             print("Долгий ответ от сервера")
+            return files_list
         except (ConnectionError, socket.error):
-            pass
+            return files_list
 
         if header.startswith('LIST'):
             _, filesize = header.split('\n', 1)
@@ -196,8 +197,9 @@ def check_server_file(filename: str, client_socket) -> bool:
             ack = client_socket.recv(512).decode(encoding).strip()
         except socket.timeout:
             print("Долгий ответ от сервера")
+            return False
         except (ConnectionError, socket.error):
-            pass
+            return False
 
         if ack.startswith("EXISTS"):
             return True
@@ -251,8 +253,9 @@ def del_file(filename: str, client_socket) -> None:
 
         except socket.timeout:
             print("Долгий ответ от сервера")
+            return None
         except (ConnectionError, socket.error):
-            pass
+            return None
 
         if ack.startswith('SUCCESS'):
             print("Файл успешно удален.")

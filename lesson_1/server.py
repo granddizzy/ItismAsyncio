@@ -14,7 +14,6 @@ clients = []
 
 
 def get_files_list() -> list:
-    # return [f for f in os.listdir(files_dir) if os.path.isfile(f) and f.endswith('.txt')]
     return [
         f"{Path(f).stem}:{os.path.getsize(os.path.join(files_dir, f))}:{int(os.path.getmtime(os.path.join(files_dir, f)))}"
         for f in os.listdir(files_dir) if os.path.isfile(os.path.join(files_dir, f))]
