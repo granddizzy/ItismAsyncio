@@ -1,5 +1,5 @@
 from lesson_1.client.model import ClientModel, ClientError
-from lesson_1.client.viev import ClientView
+from lesson_1.client.view import ClientView
 
 
 class ClientController:

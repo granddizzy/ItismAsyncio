@@ -9,7 +9,7 @@ host = '127.0.0.1'
 port = 8020
 timeout = 300
 
-files_dir = './files'
+files_dir = '../files'
 encoding = 'utf-8'
 forbidden_chars = r'[\\/:"*?<>|]'
 

@@ -1,5 +1,6 @@
 import socket
 import os
+import sys
 
 encoding = 'utf-8'
 
@@ -10,15 +11,6 @@ client_socket: socket.socket | None = None
 class ClientError:
     def __init__(self, message: str):
         self.message = message
-
-
-def get_header() -> str | ClientError:
-    try:
-        return client_socket.recv(512).decode(encoding).strip()
-    except socket.timeout:
-        return ClientError("Долгий ответ от сервера")
-    except (ConnectionError, socket.error) as e:
-        return ClientError("Ошибка соединения")
 
 
 class ClientModel:
@@ -41,26 +33,17 @@ class ClientModel:
         global client_socket
         if not client_socket:
             return False
-
         if self.send_data(self.create_byte_header('TEST')) is None:
             return True
-
         return False
 
     def check_connection(self) -> bool:
         global client_socket
         if not self.is_connected():
-            # show_message("Соединение с сервером потеряно. Переподключение...")
-
             if client_socket:
                 client_socket.close()
-
             if isinstance(res := self.set_connection(), ClientError):
-                # show_error(res)
                 return False
-
-            # show_message("Соединение установлено")
-
         return True
 
     def get_file_list(self) -> list | ClientError:
@@ -70,7 +53,7 @@ class ClientModel:
             if isinstance(res := self.send_data(self.create_byte_header('LIST')), ClientError):
                 return res
             else:
-                if isinstance(res := get_header(), ClientError):
+                if isinstance(res := self.get_header(), ClientError):
                     return res
                 elif res.startswith('LIST'):
                     _, filesize_str = res.split('\n', 1)
@@ -107,7 +90,7 @@ class ClientModel:
                 except (IOError, OSError) as e:
                     return ClientError("Ошибка чтения файла")
 
-                if isinstance(res := get_header(), ClientError):
+                if isinstance(res := self.get_header(), ClientError):
                     return res
                 elif res.startswith('ERROR'):
                     return ClientError(self.get_error_message(res))
@@ -117,7 +100,7 @@ class ClientModel:
             if isinstance(res := self.send_data(self.create_byte_header('CHECK', filename)), ClientError):
                 return res
             else:
-                if isinstance(res := get_header(), ClientError):
+                if isinstance(res := self.get_header(), ClientError):
                     return res
                 elif res.startswith("NOT_EXISTS"):
                     return ClientError(f"Файла {filename} нет на сервере")
@@ -125,7 +108,7 @@ class ClientModel:
                 if isinstance(res := self.send_data(self.create_byte_header('DEL', filename)), ClientError):
                     return res
                 else:
-                    if isinstance(res := get_header(), ClientError):
+                    if isinstance(res := self.get_header(), ClientError):
                         return res
                     elif res.startswith('ERROR'):
                         return ClientError(self.get_error_message(res))
@@ -146,11 +129,11 @@ class ClientModel:
                     pass
 
             client_socket.close()
+            sys.exit()
 
     def check_server_file(self, filename: str) -> bool | ClientError:
         if self.check_connection() and self.send_data(self.create_byte_header('CHECK', filename)) is None:
-            res = get_header()
-            if isinstance(res, ClientError):
+            if isinstance(res := self.get_header(), ClientError):
                 return res
             elif res and res.startswith("EXISTS"):
                 return True
@@ -171,3 +154,11 @@ class ClientModel:
         elif os.path.getsize(fullpath) == 0:
             return ClientError(f"Локальный файл {fullpath} пустой")
         return True
+
+    def get_header(self) -> str | ClientError:
+        try:
+            return client_socket.recv(512).decode(encoding).strip()
+        except socket.timeout:
+            return ClientError("Долгий ответ от сервера")
+        except (ConnectionError, socket.error) as e:
+            return ClientError("Ошибка соединения")
