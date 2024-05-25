@@ -2,6 +2,7 @@ import socket
 import sys
 import os
 import re
+from builtins import isinstance
 from datetime import datetime
 
 host = '127.0.0.1'
@@ -13,16 +14,20 @@ forbidden_chars = r'[\\/:"*?<>|]'
 client_socket: socket.socket | None = None
 
 
-def set_connection(host: str, port: int) -> bool:
+class ClientError:
+    def __init__(self, message: str):
+        self.message = message
+
+
+def set_connection(host: str, port: int) -> None | ClientError:
     global client_socket
     try:
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client_socket.settimeout(5)
         client_socket.connect((host, port))
-        return True
+        return None
     except (socket.timeout, ConnectionError, socket.error) as e:
-        print(e)
-        return False
+        return ClientError(f"{e}")
 
 
 def is_connected() -> bool:
@@ -30,7 +35,7 @@ def is_connected() -> bool:
     if not client_socket:
         return False
 
-    if send_data(create_byte_header('TEST')):
+    if send_data(create_byte_header('TEST')) is None:
         return True
 
     return False
@@ -39,16 +44,16 @@ def is_connected() -> bool:
 def check_connection() -> bool:
     global client_socket
     if not is_connected():
-        print("Соединение с сервером потеряно. Переподключение...")
+        show_message("Соединение с сервером потеряно. Переподключение...")
 
         if client_socket:
             client_socket.close()
 
-        if not set_connection(host, port):
-            print("Попытка не удачна")
+        if isinstance(res := set_connection(host, port), ClientError):
+            show_error(res)
             return False
 
-        print("Соединение установлено")
+        show_message("Соединение установлено")
 
     return True
 
@@ -65,8 +70,8 @@ def get_mode_fileexists(filename: str) -> str:
 
 
 def start_client():
-    if not set_connection(host, port):
-        print("Соединение с сервером не установлено.")
+    if isinstance(res := set_connection(host, port), ClientError):
+        show_error(res)
 
     while True:
         try:
@@ -77,16 +82,25 @@ def start_client():
             elif choice in (1, 2, 3):
                 if check_connection():
                     if choice == 1:
-                        show_file_list(get_file_list())
+                        if isinstance(res := get_file_list(), ClientError):
+                            show_error(res)
+                        else:
+                            show_file_list(res)
                     elif choice == 2:
                         if (path := input_path_file()) and (filename := input_filename()):
                             if (mode := get_mode_fileexists(filename)) in ['WRITE', 'ADD']:
-                                put_file(path, mode, filename)
+                                if isinstance(res := put_file(path, mode, filename), ClientError):
+                                    show_error(res)
+                                else:
+                                    show_message(f"Файл {filename} успешно добавлен")
                     elif choice == 3:
                         if filename := input_filename():
-                            del_file(filename)
+                            if isinstance(res := del_file(filename), ClientError):
+                                show_error(res)
+                            else:
+                                show_message(f"Файл {filename} успешно удален")
         except Exception as e:
-            print(f"An error occurred: {e}")
+            show_error(ClientError(f"{e}"))
 
 
 def show_main_menu() -> int:
@@ -134,35 +148,31 @@ def input_filename() -> str:
             print(f"Имя содержит запрещенные символы: {forbidden_chars}")
 
 
-def get_file_list() -> list:
+def get_file_list() -> list | ClientError:
     files_list = []
 
     if check_connection():
-        try:
-            client_socket.sendall(create_byte_header('LIST'))
-            header = client_socket.recv(512).decode(encoding).strip()
-        except socket.timeout:
-            print("Долгий ответ от сервера")
-            return files_list
-        except (ConnectionError, socket.error):
-            return files_list
+        if isinstance(res := send_data(create_byte_header('LIST')), ClientError):
+            return res
+        else:
+            if isinstance(res := get_header(), ClientError):
+                return res
+            elif res.startswith('LIST'):
+                _, filesize_str = res.split('\n', 1)
 
-        if header.startswith('LIST'):
-            _, filesize_str = header.split('\n', 1)
+                filesize = int(filesize_str)
+                buffer = b''
+                count = 0
+                if filesize > 1024:
+                    count = filesize // 1024
+                bytes_remainder = filesize - 1024 * count
+                for i in range(1, count + 1):
+                    buffer += client_socket.recv(1024)
+                if bytes_remainder:
+                    buffer += client_socket.recv(bytes_remainder)
 
-            filesize = int(filesize_str)
-            buffer = b''
-            count = 0
-            if filesize > 1024:
-                count = filesize // 1024
-            bytes_remainder = filesize - 1024 * count
-            for i in range(1, count + 1):
-                buffer += client_socket.recv(1024)
-            if bytes_remainder:
-                buffer += client_socket.recv(bytes_remainder)
-
-            if buffer:
-                files_list = buffer.split(b'\n')
+                if buffer:
+                    files_list = buffer.split(b'\n')
 
     return list(map(lambda x: x.decode(encoding), files_list))
 
@@ -192,68 +202,72 @@ def check_local_file(path: str) -> bool:
     return True
 
 
-def check_server_file(filename: str) -> bool:
-    if check_connection() and send_data(create_byte_header('CHECK', filename)):
-        if (ack := get_header()) and ack.startswith("EXISTS"):
+def check_server_file(filename: str) -> bool | ClientError:
+    if check_connection() and send_data(create_byte_header('CHECK', filename)) is None:
+        res = get_header()
+        if isinstance(res, ClientError):
+            return res
+        elif res and res.startswith("EXISTS"):
             return True
     return False
 
 
-def put_file(path: str, mode: str, filename: str) -> None:
+def put_file(path: str, mode: str, filename: str) -> None | ClientError:
     fullpath = path + ".txt"
-    if check_connection() and send_data(create_byte_header('PUT', filename, str(os.path.getsize(fullpath)), mode)):
-        allright = False
-        with open(fullpath, 'rb') as f:
-            allright = True
-            while chunk := f.read(1024):
-                if not send_data(chunk):
-                    allright = False
-
-        if not allright:
-            print("Ошибка при передаче файла")
+    if check_connection():
+        if isinstance(res := send_data(create_byte_header('PUT', filename, str(os.path.getsize(fullpath)), mode)),
+                      ClientError):
+            return res
         else:
-            if ack := get_header():
-                if ack.startswith('SUCCESS'):
-                    print("Файл успешно добавлен.")
-                elif ack.startswith('ERROR'):
-                    print(get_error_message(ack))
+            try:
+                with open(fullpath, 'rb') as f:
+                    while chunk := f.read(1024):
+                        if isinstance(res := send_data(chunk), ClientError):
+                            return res
+            except (IOError, OSError) as e:
+                return ClientError("Ошибка чтения файла")
+
+            if isinstance(res := get_header(), ClientError):
+                return res
+            elif res.startswith('ERROR'):
+                return ClientError(get_error_message(res))
 
 
-def del_file(filename: str) -> None:
-    if check_connection() and send_data(create_byte_header('CHECK', filename)):
-        if ack := get_header():
-            if ack.startswith("NOT_EXISTS"):
-                print(f"Файла {filename} нет на сервере")
-                return None
+def del_file(filename: str) -> None | ClientError:
+    if check_connection():
+        if isinstance(res := send_data(create_byte_header('CHECK', filename)), ClientError):
+            return res
         else:
-            return None
+            if isinstance(res := get_header(), ClientError):
+                return res
+            elif res.startswith("NOT_EXISTS"):
+                return ClientError(f"Файла {filename} нет на сервере")
 
-        if send_data(create_byte_header('DEL', filename)):
-            if ack := get_header():
-                if ack.startswith('SUCCESS'):
-                    print(f"Файл {filename} успешно удален.")
-                elif ack.startswith('ERROR'):
-                    print(get_error_message(ack))
+            if isinstance(res := send_data(create_byte_header('DEL', filename)), ClientError):
+                return res
+            else:
+                if isinstance(res := get_header(), ClientError):
+                    return res
+                elif res.startswith('ERROR'):
+                    return ClientError(get_error_message(res))
 
 
-def get_header() -> str | None:
+def get_header() -> str | ClientError:
     try:
         return client_socket.recv(512).decode(encoding).strip()
     except socket.timeout:
-        print("Долгий ответ от сервера")
-    except (ConnectionError, socket.error):
-        pass
-
-    return None
+        return ClientError("Долгий ответ от сервера")
+    except (ConnectionError, socket.error) as e:
+        return ClientError("Ошибка соединения")
 
 
-def send_data(data: bin) -> bool:
+def send_data(data: bin) -> None | ClientError:
     try:
         client_socket.sendall(data)
-    except (socket.timeout, ConnectionError, socket.error):
-        return False
+    except (socket.timeout, ConnectionError, socket.error, Exception):
+        return ClientError("Ошибка соединения")
 
-    return True
+    return None
 
 
 def prog_exit() -> None:
@@ -266,7 +280,7 @@ def prog_exit() -> None:
                 pass
 
         client_socket.close()
-    print("До свидания!!!")
+    show_message("До свидания!!!")
     sys.exit()
 
 
@@ -276,6 +290,14 @@ def get_error_message(msg: str) -> str:
 
 def create_byte_header(*args) -> bin:
     return '\n'.join(args).encode(encoding).ljust(512, b' ')
+
+
+def show_error(error: ClientError):
+    print(f"Ошибка: {error.message}")
+
+
+def show_message(msg):
+    print(msg)
 
 
 if __name__ == "__main__":
