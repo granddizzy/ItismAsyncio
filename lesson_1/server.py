@@ -29,7 +29,6 @@ def send_files_list(client_socket: socket.socket) -> None:
 
 def put_file(client_socket, filename: str, filesize: int, act: str) -> None:
     mode = 'wb'
-
     if check_filename(filename) and act == 'ADD':
         mode = 'ab'
 
