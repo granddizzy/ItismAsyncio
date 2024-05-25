@@ -19,13 +19,13 @@ def get_files_list() -> list:
         for f in os.listdir(files_dir) if os.path.isfile(os.path.join(files_dir, f))]
 
 
-def send_files_list(client_socket):
+def send_files_list(client_socket: socket.socket) -> None:
     data = '\n'.join(get_files_list()).encode(encoding)
     client_socket.sendall(get_byte_header('LIST', str(len(data))))
     client_socket.sendall(data)
 
 
-def put_file(client_socket, filename: str, filesize: int, act: str):
+def put_file(client_socket, filename: str, filesize: int, act: str) -> None:
     mode = 'wb'
 
     if check_filename(filename) and act == 'ADD':
@@ -50,7 +50,7 @@ def put_file(client_socket, filename: str, filesize: int, act: str):
         client_socket.sendall(get_byte_header('ERROR', 'No data'))
 
 
-def check_filename(filename) -> bool:
+def check_filename(filename: str) -> bool:
     return os.path.exists(os.path.join(files_dir, filename) + ".txt")
 
 
@@ -58,7 +58,7 @@ def get_file(client_socket, filename):
     pass
 
 
-def del_file(filename: str, client_socket):
+def del_file(filename: str, client_socket: socket.socket) -> None:
     if check_filename(filename):
         os.remove(os.path.join(files_dir, filename) + ".txt")
         client_socket.sendall(get_byte_header('SUCCESS'))
@@ -70,7 +70,7 @@ def get_byte_header(*args: str) -> bin:
     return '\n'.join(args).encode(encoding).ljust(512, b' ')
 
 
-def handle(client_socket, client_address):
+def handle(client_socket: socket.socket, client_address: tuple):
     client_socket.settimeout(300)
     while True:
         try:

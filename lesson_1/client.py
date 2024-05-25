@@ -11,7 +11,7 @@ encoding = 'utf-8'
 forbidden_chars = r'[\\/:"*?<>|]'
 
 
-def set_connection(host, port) -> socket.socket | None:
+def set_connection(host: str, port: int) -> socket.socket | None:
     try:
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client_socket.settimeout(5)
@@ -30,7 +30,7 @@ def is_connected(client_socket: socket.socket) -> bool:
         return False
 
 
-def check_connection(client_socket) -> socket.socket:
+def check_connection(client_socket: socket.socket) -> socket.socket:
     if not client_socket or not is_connected(client_socket):
         print("Соединение с сервером потеряно. Переподключение...")
 
@@ -127,7 +127,7 @@ def input_filename() -> str:
             print(f"Имя содержит запрещенные символы: {forbidden_chars}")
 
 
-def get_file_list(client_socket) -> list:
+def get_file_list(client_socket: socket.socket) -> list:
     files_list = []
 
     if client_socket := check_connection(client_socket):
@@ -186,7 +186,7 @@ def check_local_file(path: str) -> bool:
     return True
 
 
-def check_server_file(filename: str, client_socket) -> bool:
+def check_server_file(filename: str, client_socket: socket.socket) -> bool:
     ack = ''
 
     if client_socket := check_connection(client_socket):
@@ -207,7 +207,7 @@ def check_server_file(filename: str, client_socket) -> bool:
     return False
 
 
-def put_file(path: str, client_socket, mode: str, filename: str) -> None:
+def put_file(path: str, client_socket: socket.socket, mode: str, filename: str) -> None:
     ack = ''
 
     if client_socket := check_connection(client_socket):
@@ -233,7 +233,7 @@ def put_file(path: str, client_socket, mode: str, filename: str) -> None:
             print(get_error_message(ack))
 
 
-def del_file(filename: str, client_socket) -> None:
+def del_file(filename: str, client_socket: socket.socket) -> None:
     ack = ''
 
     if client_socket := check_connection(client_socket):
@@ -263,7 +263,7 @@ def del_file(filename: str, client_socket) -> None:
             print(get_error_message(ack))
 
 
-def prog_exit(client_socket):
+def prog_exit(client_socket: socket.socket) -> None:
     if client_socket:
         if is_connected(client_socket):
             try:
@@ -277,7 +277,7 @@ def prog_exit(client_socket):
     sys.exit()
 
 
-def get_error_message(msg):
+def get_error_message(msg: str) -> str:
     return msg.split('\n', 1)[1]
 
 
