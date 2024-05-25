@@ -1,4 +1,5 @@
 import socket
+import sys
 import threading
 import os
 import re
@@ -6,6 +7,7 @@ from pathlib import Path
 
 host = '127.0.0.1'
 port = 8020
+timeout = 300
 
 files_dir = './files'
 encoding = 'utf-8'
@@ -21,10 +23,11 @@ def get_files_list() -> list:
         for f in os.listdir(files_dir) if os.path.isfile(os.path.join(files_dir, f))]
 
 
-def send_files_list(client_socket: socket.socket) -> None:
+def send_files_list(client_socket: socket.socket) -> bool:
     data = '\n'.join(get_files_list()).encode(encoding)
-    client_socket.sendall(get_byte_header('LIST', str(len(data))))
-    client_socket.sendall(data)
+    if send_data(client_socket, create_byte_header('LIST', str(len(data)))) and send_data(client_socket, data):
+        return True
+    return False
 
 
 def put_file(client_socket, filename: str, filesize: int, act: str) -> None:
@@ -46,9 +49,9 @@ def put_file(client_socket, filename: str, filesize: int, act: str) -> None:
         with open(os.path.join(files_dir, filename) + ".txt", mode) as f:
             f.write(buffer)
 
-        client_socket.sendall(get_byte_header('SUCCESS'))
+        send_data(client_socket, create_byte_header('SUCCESS'))
     else:
-        client_socket.sendall(get_byte_header('ERROR', 'No data'))
+        send_data(client_socket, create_byte_header('ERROR', 'No data'))
 
 
 def check_filename(filename: str) -> bool:
@@ -62,55 +65,72 @@ def get_file(client_socket, filename):
 def del_file(filename: str, client_socket: socket.socket) -> None:
     if check_filename(filename):
         os.remove(os.path.join(files_dir, filename) + ".txt")
-        client_socket.sendall(get_byte_header('SUCCESS'))
+        send_data(client_socket, create_byte_header('SUCCESS'))
     else:
-        client_socket.sendall(get_byte_header('ERROR', 'File not exists'))
+        send_data(client_socket, create_byte_header('ERROR', 'File not exists'))
 
 
-def get_byte_header(*args: str) -> bin:
+def create_byte_header(*args: str) -> bin:
     return '\n'.join(args).encode(encoding).ljust(512, b' ')
 
 
+def get_header(client_socket, client_address) -> str | None:
+    try:
+        return client_socket.recv(512).decode(encoding).strip()
+    except socket.timeout:
+        print(f"Timeout {client_address[0]}:{client_address[1]}")
+    except (ConnectionError, socket.error) as e:
+        print(e)
+
+    disconnect(client_socket, client_address)
+
+
+def send_data(client_socket, data: bin) -> bool:
+    try:
+        client_socket.sendall(data)
+    except (socket.timeout, ConnectionError, socket.error):
+        return False
+
+    return True
+
+
 def handle(client_socket: socket.socket, client_address: tuple):
-    client_socket.settimeout(300)
     while True:
         try:
-            header = client_socket.recv(512).decode(encoding).strip()
-
-            if header.startswith('LIST'):
-                send_files_list(client_socket)
-            elif header.startswith('GET'):
-                _, filename = header.split('\n', 1)
-                if check_filename(filename):
-                    get_file(client_socket, filename)
-                else:
-                    client_socket.sendall(get_byte_header('ERROR', 'File not exists'))
-            elif header.startswith('CHECK'):
-                _, filename = header.split('\n', 1)
-                if check_filename(filename):
-                    client_socket.sendall(get_byte_header('EXISTS'))
-                else:
-                    client_socket.sendall(get_byte_header('NOT_EXISTS'))
-            elif header.startswith('PUT'):
-                _, filename, filesize, act = header.split('\n', 3)
-                if not re.search(forbidden_chars, filename):
-                    put_file(client_socket, filename, int(filesize), act)
-                else:
-                    client_socket.sendall(get_byte_header('ERROR', 'Forbidden chars'))
-            elif header.startswith('DEL'):
-                _, filename = header.split('\n', 1)
-                del_file(filename, client_socket)
-            elif header.startswith('QUIT'):
-                print(f"Disconnected {client_address[0]}:{client_address[1]}")
-                client_socket.close()
-                break
-
-        except (socket.timeout, ConnectionError, socket.error):
-            print(f"Auto disconnected {client_address[0]}:{client_address[1]}")
-            client_socket.close()
-            break
+            if (header := get_header(client_socket, client_address)) is not None:
+                if header.startswith('LIST'):
+                    send_files_list(client_socket)
+                elif header.startswith('GET'):
+                    _, filename = header.split('\n', 1)
+                    if check_filename(filename):
+                        get_file(client_socket, filename)
+                    else:
+                        client_socket.sendall(create_byte_header('ERROR', 'File not exists'))
+                elif header.startswith('CHECK'):
+                    _, filename = header.split('\n', 1)
+                    if check_filename(filename):
+                        send_data(client_socket, create_byte_header('EXISTS'))
+                    else:
+                        send_data(client_socket, create_byte_header('NOT_EXISTS'))
+                elif header.startswith('PUT'):
+                    _, filename, filesize, act = header.split('\n', 3)
+                    if not re.search(forbidden_chars, filename):
+                        put_file(client_socket, filename, int(filesize), act)
+                    else:
+                        send_data(client_socket, create_byte_header('ERROR', 'Forbidden chars'))
+                elif header.startswith('DEL'):
+                    _, filename = header.split('\n', 1)
+                    del_file(filename, client_socket)
+                elif header.startswith('QUIT'):
+                    disconnect(client_socket, client_address)
         except Exception as e:
-            print(f"An error occurred: {e}")
+            print(f"An error occured {e}")
+
+
+def disconnect(client_socket, client_address):
+    print(f"Disconnected {client_address[0]}:{client_address[1]}")
+    client_socket.close()
+    sys.exit()
 
 
 def check_directory() -> bool:
@@ -118,7 +138,7 @@ def check_directory() -> bool:
         if not os.path.exists(files_dir):
             os.makedirs(files_dir)
     except OSError as e:
-        print(f"Ошибка при создании каталога '{files_dir}': {e}")
+        print(f"Catalog creation error '{files_dir}': {e}")
         return False
 
     return True
@@ -134,6 +154,7 @@ def start_server():
 
             while True:
                 client_socket, client_address = server_socket.accept()
+                client_socket.settimeout(timeout)
                 # clients.append(client_socket)
 
                 print(f"Connected {client_address[0]}:{client_address[1]}")

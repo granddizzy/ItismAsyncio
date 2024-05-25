@@ -30,11 +30,10 @@ def is_connected() -> bool:
     if not client_socket:
         return False
 
-    try:
-        client_socket.sendall(get_byte_header('TEST'))
+    if send_data(create_byte_header('TEST')):
         return True
-    except (socket.timeout, ConnectionError, socket.error):
-        return False
+
+    return False
 
 
 def check_connection() -> bool:
@@ -140,7 +139,7 @@ def get_file_list() -> list:
 
     if check_connection():
         try:
-            client_socket.sendall(get_byte_header('LIST'))
+            client_socket.sendall(create_byte_header('LIST'))
             header = client_socket.recv(512).decode(encoding).strip()
         except socket.timeout:
             print("Долгий ответ от сервера")
@@ -194,74 +193,74 @@ def check_local_file(path: str) -> bool:
 
 
 def check_server_file(filename: str) -> bool:
-    if check_connection():
-        try:
-            client_socket.sendall(get_byte_header('CHECK', filename))
-            ack = client_socket.recv(512).decode(encoding).strip()
-        except socket.timeout:
-            print("Долгий ответ от сервера")
-            return False
-        except (ConnectionError, socket.error):
-            return False
-
-        if ack.startswith("EXISTS"):
+    if check_connection() and send_data(create_byte_header('CHECK', filename)):
+        if (ack := get_header()) and ack.startswith("EXISTS"):
             return True
-
     return False
 
 
 def put_file(path: str, mode: str, filename: str) -> None:
-    if check_connection():
-        try:
-            fullpath = path + ".txt"
-            client_socket.sendall(get_byte_header('PUT', filename, str(os.path.getsize(fullpath)), mode))
+    fullpath = path + ".txt"
+    if check_connection() and send_data(create_byte_header('PUT', filename, str(os.path.getsize(fullpath)), mode)):
+        allright = False
+        with open(fullpath, 'rb') as f:
+            allright = True
+            while chunk := f.read(1024):
+                if not send_data(chunk):
+                    allright = False
 
-            with open(fullpath, 'rb') as f:
-                while chunk := f.read(1024):
-                    client_socket.sendall(chunk)
-
-            ack = client_socket.recv(512).decode(encoding).strip()
-        except socket.timeout:
-            print("Долгий ответ от сервера")
-            return None
-        except (ConnectionError, socket.error):
-            return None
-
-        if ack.startswith('SUCCESS'):
-            print("Файл успешно добавлен.")
-        elif ack.startswith('ERROR'):
-            print(get_error_message(ack))
+        if not allright:
+            print("Ошибка при передаче файла")
+        else:
+            if ack := get_header():
+                if ack.startswith('SUCCESS'):
+                    print("Файл успешно добавлен.")
+                elif ack.startswith('ERROR'):
+                    print(get_error_message(ack))
 
 
 def del_file(filename: str) -> None:
-    if check_connection():
-        try:
-            client_socket.sendall(get_byte_header('CHECK', filename))
-            ack = client_socket.recv(512).decode(encoding).strip()
+    if check_connection() and send_data(create_byte_header('CHECK', filename)):
+        if ack := get_header():
             if ack.startswith("NOT_EXISTS"):
                 print(f"Файла {filename} нет на сервере")
                 return None
-
-            client_socket.sendall(get_byte_header('DEL', filename))
-            ack = client_socket.recv(512).decode(encoding).strip()
-
-        except socket.timeout:
-            print("Долгий ответ от сервера")
-            return None
-        except (ConnectionError, socket.error):
+        else:
             return None
 
-        if ack.startswith('SUCCESS'):
-            print(f"Файл {filename} успешно удален.")
-        elif ack.startswith('ERROR'):
-            print(get_error_message(ack))
+        if send_data(create_byte_header('DEL', filename)):
+            if ack := get_header():
+                if ack.startswith('SUCCESS'):
+                    print(f"Файл {filename} успешно удален.")
+                elif ack.startswith('ERROR'):
+                    print(get_error_message(ack))
+
+
+def get_header() -> str | None:
+    try:
+        return client_socket.recv(512).decode(encoding).strip()
+    except socket.timeout:
+        print("Долгий ответ от сервера")
+    except (ConnectionError, socket.error):
+        pass
+
+    return None
+
+
+def send_data(data: bin) -> bool:
+    try:
+        client_socket.sendall(data)
+    except (socket.timeout, ConnectionError, socket.error):
+        return False
+
+    return True
 
 
 def prog_exit() -> None:
     if client_socket:
         if is_connected():
+            send_data(create_byte_header('QUIT'))
             try:
-                client_socket.sendall(get_byte_header('QUIT'))
                 client_socket.shutdown(socket.SHUT_RDWR)
             except (ConnectionError, socket.error):
                 pass
@@ -275,7 +274,7 @@ def get_error_message(msg: str) -> str:
     return msg.split('\n', 1)[1]
 
 
-def get_byte_header(*args) -> bin:
+def create_byte_header(*args) -> bin:
     return '\n'.join(args).encode(encoding).ljust(512, b' ')
 
 
