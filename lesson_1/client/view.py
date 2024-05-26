@@ -53,13 +53,13 @@ class ClientView:
             for filedata in files:
                 filename, filesize, modified = filedata.split(':', 2)
                 modified_date = datetime.fromtimestamp(int(modified)).strftime('%Y-%m-%d %H:%M:%S')
-                print(f"{filename:<40} {filesize:<10} {modified_date:<10}")
+                print(f"{filename:<40} {filesize:<10} {modified_date:<20}")
         else:
             print("Файлов нет")
         print("=" * 83 + "\n")
 
     def show_error(self, error: ClientError):
-        print(error.message)
+        print(f"Ошибка: {error.message}")
 
     def show_message(self, msg):
         print(msg)

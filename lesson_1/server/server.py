@@ -46,7 +46,7 @@ def put_file(client_socket, filename: str, filesize: int, act: str) -> None:
         buffer += client_socket.recv(bytes_remainder)
 
     if buffer:
-        with open(os.path.join(files_dir, filename) + ".txt", mode) as f:
+        with open(os.path.join(files_dir, f"{filename}.txt"), mode) as f:
             f.write(buffer)
 
         send_data(client_socket, create_byte_header('SUCCESS'))
@@ -55,11 +55,11 @@ def put_file(client_socket, filename: str, filesize: int, act: str) -> None:
 
 
 def check_filename(filename: str) -> bool:
-    return os.path.exists(os.path.join(files_dir, filename) + ".txt")
+    return os.path.exists(os.path.join(files_dir, f"{filename}.txt"))
 
 
 def get_file(client_socket, filename):
-    fullpath = os.path.join(files_dir, filename) + ".txt"
+    fullpath = os.path.join(files_dir, f"{filename}.txt")
     send_data(client_socket, create_byte_header('GET', str(os.path.getsize(fullpath))))
     with open(fullpath, 'rb') as f:
         while chunk := f.read(1024):
@@ -68,7 +68,7 @@ def get_file(client_socket, filename):
 
 def del_file(filename: str, client_socket: socket.socket) -> None:
     if check_filename(filename):
-        os.remove(os.path.join(files_dir, filename) + ".txt")
+        os.remove(os.path.join(files_dir, f"{filename}.txt"))
         send_data(client_socket, create_byte_header('SUCCESS'))
     else:
         send_data(client_socket, create_byte_header('ERROR', 'File not exists'))
@@ -78,30 +78,29 @@ def create_byte_header(*args: str) -> bin:
     return '\n'.join(args).encode(encoding).ljust(512, b' ')
 
 
-def get_header(client_socket, client_address) -> str | None:
+def get_header(client_socket) -> str | None:
     try:
         return client_socket.recv(512).decode(encoding).strip()
     except socket.timeout:
-        print(f"Timeout {client_address[0]}:{client_address[1]}")
+        print(f"Timeout {client_socket.getpeername()}")
     except (ConnectionError, socket.error) as e:
         print(e)
 
-    disconnect(client_socket, client_address)
+    disconnect(client_socket)
 
 
 def send_data(client_socket, data: bin) -> bool:
     try:
         client_socket.sendall(data)
+        return True
     except (socket.timeout, ConnectionError, socket.error):
         return False
 
-    return True
 
-
-def handle(client_socket: socket.socket, client_address: tuple):
+def handle(client_socket: socket.socket):
     while True:
         try:
-            if (header := get_header(client_socket, client_address)) is not None:
+            if (header := get_header(client_socket)) is not None:
                 if header.startswith('LIST'):
                     send_files_list(client_socket)
                 elif header.startswith('GET'):
@@ -126,13 +125,13 @@ def handle(client_socket: socket.socket, client_address: tuple):
                     _, filename = header.split('\n', 1)
                     del_file(filename, client_socket)
                 elif header.startswith('QUIT'):
-                    disconnect(client_socket, client_address)
+                    disconnect(client_socket)
         except Exception as e:
             print(f"An error occured {e}")
 
 
-def disconnect(client_socket, client_address):
-    print(f"Disconnected {client_address[0]}:{client_address[1]}")
+def disconnect(client_socket):
+    print(f"Disconnected {client_socket.getpeername()[0]}:{client_socket.getpeername()[1]}")
     client_socket.close()
     sys.exit()
 
@@ -157,12 +156,12 @@ def start_server():
             print(f"Server is listening on {host}:{port}")
 
             while True:
-                client_socket, client_address = server_socket.accept()
+                client_socket, _ = server_socket.accept()
                 client_socket.settimeout(timeout)
                 # clients.append(client_socket)
 
-                print(f"Connected {client_address[0]}:{client_address[1]}")
-                client_thread = threading.Thread(target=handle, args=(client_socket, client_address))
+                print(f"Connected {client_socket.getpeername()[0]}:{client_socket.getpeername()[1]}")
+                client_thread = threading.Thread(target=handle, args=(client_socket,))
                 client_thread.start()
 
 

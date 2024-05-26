@@ -9,6 +9,7 @@ forbidden_chars = r'[\\/:"*?<>|]'
 class ClientError(Exception):
     def __init__(self, message: str):
         self.message = message
+        super().__init__(message)
 
 
 class ClientModel:
@@ -44,27 +45,16 @@ class ClientModel:
         files_list = []
         self.send_data(self.create_byte_header('LIST'))
         if (res := self.get_header()) and res.startswith('LIST'):
-            _, filesize_str = res.split('\n', 1)
-
-            filesize = int(filesize_str)
-            buffer = b''
-            count = 0
-            if filesize > 1024:
-                count = filesize // 1024
-            bytes_remainder = filesize - 1024 * count
-            for i in range(1, count + 1):
-                buffer += self.client_socket.recv(1024)
-            if bytes_remainder:
-                buffer += self.client_socket.recv(bytes_remainder)
-            if buffer:
-                files_list = buffer.split(b'\n')
+            _, filesize = res.split('\n', 1)
+            data = self.receive_data(int(filesize))
+            if data:
+                files_list = data.split(b'\n')
 
         return list(map(lambda x: x.decode(encoding), files_list))
 
     def put_file(self, path: str, mode: str, filename: str) -> None:
-        fullpath = path + ".txt"
+        fullpath = f"{path}.txt"
         self.send_data(self.create_byte_header('PUT', filename, str(os.path.getsize(fullpath)), mode))
-
         try:
             with open(fullpath, 'rb') as f:
                 while chunk := f.read(1024):
@@ -74,6 +64,16 @@ class ClientModel:
 
         if (res := self.get_header()) and res.startswith('ERROR'):
             raise ClientError(self.get_error_message(res))
+
+    def receive_data(self, filesize: int) -> bytes:
+        buffer = b''
+        count = filesize // 1024
+        bytes_remainder = filesize % 1024
+        for _ in range(count):
+            buffer += self.client_socket.recv(1024)
+        if bytes_remainder:
+            buffer += self.client_socket.recv(bytes_remainder)
+        return buffer
 
     def del_file(self, filename: str) -> None:
         self.send_data(self.create_byte_header('CHECK', filename))
@@ -89,23 +89,12 @@ class ClientModel:
         if (res := self.get_header()) and res.startswith("NOT_EXISTS"):
             raise ClientError(f"Файла {filename} нет на сервере")
         elif res.startswith("GET"):
-            fullpath = path + ".txt"
-            _, filesize_str = res.split('\n', 1)
-
-            buffer = b''
-            count = 0
-            filesize = int(filesize_str)
-            if filesize > 1024:
-                count = filesize // 1024
-            bytes_remainder = filesize - 1024 * count
-            for i in range(1, count + 1):
-                buffer += self.client_socket.recv(1024)
-            if bytes_remainder:
-                buffer += self.client_socket.recv(bytes_remainder)
+            _, filesize = res.split('\n', 1)
+            buffer = self.receive_data(int(filesize))
 
             try:
                 if buffer:
-                    with open(fullpath, 'ab' if mode == 'ADD' else 'wb') as f:
+                    with open(f"{path}.txt", 'ab' if mode == 'ADD' else 'wb') as f:
                         f.write(buffer)
             except (IOError, OSError) as e:
                 raise ClientError(f"Ошибка записи файла: {e}")
@@ -124,9 +113,8 @@ class ClientModel:
                     self.client_socket.shutdown(socket.SHUT_RDWR)
                 except (ConnectionError, socket.error):
                     pass
-
             self.client_socket.close()
-            sys.exit()
+        sys.exit()
 
     def is_server_file_exists(self, filename: str) -> bool:
         self.send_data(self.create_byte_header('CHECK', filename))
@@ -141,16 +129,10 @@ class ClientModel:
             raise ClientError(f"Ошибка отправки данных: {e}")
 
     def is_local_file_exists(self, path: str) -> bool:
-        fullpath = path + ".txt"
-        if os.path.isfile(fullpath):
-            return True
-        return False
+        return os.path.isfile(f"{path}.txt")
 
     def is_local_file_filled(self, path: str) -> bool:
-        fullpath = path + ".txt"
-        if os.path.getsize(fullpath):
-            return True
-        return False
+        return os.path.getsize(f"{path}.txt") > 0
 
     def get_header(self) -> str:
         try:
