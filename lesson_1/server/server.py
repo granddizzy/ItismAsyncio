@@ -59,7 +59,11 @@ def check_filename(filename: str) -> bool:
 
 
 def get_file(client_socket, filename):
-    pass
+    fullpath = os.path.join(files_dir, filename) + ".txt"
+    send_data(client_socket, create_byte_header('GET', str(os.path.getsize(fullpath))))
+    with open(fullpath, 'rb') as f:
+        while chunk := f.read(1024):
+            send_data(client_socket, chunk)
 
 
 def del_file(filename: str, client_socket: socket.socket) -> None:

@@ -14,8 +14,9 @@ class ClientView:
         print('1.Получить список файлов')
         print('2.Добавить файл')
         print('3.Удалить файл')
+        print('4.Получить файл')
         print()
-        return self.input_choice(4)
+        return self.input_choice(5)
 
     def show_fileexists_menu(self) -> int:
         print()
@@ -33,7 +34,7 @@ class ClientView:
             if answer.isdigit() and 0 <= int(answer) <= max_choice_num:
                 return int(answer)
 
-    def input_path_file(self) -> str:
+    def input_local_path_file(self) -> str:
         return input("Введите путь к текстовому файлу на вашем компьютере (имя файла без расширения):")
 
     def input_filename(self) -> str:
@@ -58,7 +59,7 @@ class ClientView:
         print("=" * 83 + "\n")
 
     def show_error(self, error: ClientError):
-        print(f"Ошибка: {error.message}")
+        print(error.message)
 
     def show_message(self, msg):
         print(msg)

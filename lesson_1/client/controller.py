@@ -8,43 +8,56 @@ class ClientController:
         self.view = view
 
     def start_client(self):
-        if isinstance(res := self.model.set_connection(), ClientError):
-            self.view.show_error(res)
+        try:
+            self.model.set_connection()
+        except ClientError as e:
+            self.view.show_error(e)
 
         while True:
             try:
                 choice = self.view.show_main_menu()
+                self.model.check_connection()
 
                 if choice == 0:
+                    self.view.show_message("До свидания!!!")
                     self.model.close_connection()
                 elif choice in (1, 2, 3):
-                    if self.model.check_connection():
-                        if choice == 1:
-                            if isinstance(res := self.model.get_file_list(), ClientError):
-                                self.view.show_error(res)
-                            else:
-                                self.view.show_file_list(res)
-                        elif choice == 2:
-                            while True:
-                                path = self.view.input_path_file()
-                                if isinstance(res := self.model.check_local_file(path), ClientError):
-                                    self.view.show_error(res)
-                                else:
+                    if choice == 1:
+                        self.view.show_file_list(self.model.get_file_list())
+                    elif choice == 2:
+                        while True:
+                            path = self.view.input_local_path_file()
+                            if self.model.is_local_file_exists(path):
+                                if self.model.is_local_file_filled(path):
                                     break
-                            if path and (filename := self.view.input_filename()):
+                                else:
+                                    raise ClientError(f"Файл {path} пуст")
+                            else:
+                                raise ClientError(f"Файл {path} не найден")
+                        if path and (filename := self.view.input_filename()):
+                            mode = 'WRITE'
+                            if self.model.is_server_file_exists(filename):
+                                mode = self.view.input_mode_fileexists()
+                            if mode in ['WRITE', 'ADD']:
+                                self.model.put_file(path, mode, filename)
+                                self.view.show_message(f"Файл {filename} успешно добавлен")
+                    elif choice == 3:
+                        if filename := self.view.input_filename():
+                            self.model.del_file(filename)
+                            self.view.show_message(f"Файл {filename} успешно удален")
+                elif choice == 4:
+                    if filename := self.view.input_filename():
+                        if self.model.is_server_file_exists(filename):
+                            if path := self.view.input_local_path_file():
                                 mode = 'WRITE'
-                                if self.model.check_server_file(filename):
+                                if self.model.is_server_file_exists(path):
                                     mode = self.view.input_mode_fileexists()
                                 if mode in ['WRITE', 'ADD']:
-                                    if isinstance(res := self.model.put_file(path, mode, filename), ClientError):
-                                        self.view.show_error(res)
-                                    else:
-                                        self.view.show_message(f"Файл {filename} успешно добавлен")
-                        elif choice == 3:
-                            if filename := self.view.input_filename():
-                                if isinstance(res := self.model.del_file(filename), ClientError):
-                                    self.view.show_error(res)
-                                else:
-                                    self.view.show_message(f"Файл {filename} успешно удален")
+                                    self.model.save_file(filename, path, mode)
+                                    self.view.show_message(f"Файл {path} успешно сохранен")
+                        else:
+                            self.view.show_error(ClientError(f"Файл {filename} не найден на сервере"))
+            except ClientError as e:
+                self.view.show_error(e)
             except Exception as e:
                 self.view.show_error(ClientError(f"{e}"))
