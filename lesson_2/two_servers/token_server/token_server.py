@@ -23,10 +23,10 @@ class Server:
     def __init__(self, host: str, port: int):
         self.host = host
         self.port = port
-        self.sockets_list = []
+        self.__sockets_list = []
 
-    def disconnect(self, client_socket):
-        self.sockets_list.remove(client_socket)
+    def __disconnect(self, client_socket):
+        self.__sockets_list.remove(client_socket)
         # print(f"Disconnected {client_socket.getpeername()[0]}:{client_socket.getpeername()[1]}")
         client_socket.close()
 
@@ -37,53 +37,53 @@ class Server:
                 server_socket.bind((host, port))
                 server_socket.listen()
                 print(f"Token server is listening on {host}:{port}")
-                self.sockets_list = [server_socket]
+                self.__sockets_list = [server_socket]
                 while True:
-                    read_sockets, write_sockets, error_sockets = select.select(self.sockets_list, self.sockets_list,
-                                                                               self.sockets_list)
+                    read_sockets, write_sockets, error_sockets = select.select(self.__sockets_list, self.__sockets_list,
+                                                                               self.__sockets_list)
                     for notified_socket in read_sockets:
                         try:
                             if notified_socket == server_socket:
                                 client_socket, _ = server_socket.accept()
-                                self.sockets_list.append(client_socket)
+                                self.__sockets_list.append(client_socket)
                             else:
-                                if (request := self.get_request(notified_socket)) and request.startswith('GET'):
-                                    client_id = self.generate_id()
-                                    token = self.generate_token(32)
-                                    self.save_to_storage(client_id, token)
-                                    self.send_response(notified_socket, self.create_byte_header('GET',
+                                if (request := self.__get_request(notified_socket)) and request.startswith('GET'):
+                                    client_id = self.__generate_id()
+                                    token = self.__generate_token(32)
+                                    self.__save_to_storage(client_id, token)
+                                    self.__send_response(notified_socket, self.__create_byte_header('GET',
                                                                                                 f"{client_id}",
                                                                                                 f"{token}"))
                                     print(f"Issued the token {token} to the client {notified_socket.getpeername()}")
-                                    self.disconnect(notified_socket)
+                                    self.__disconnect(notified_socket)
                                 elif request.startswith('CHECK'):
                                     _, token = request.split('\n', 1)
-                                    client_id = self.check_token(token)
+                                    client_id = self.__check_token(token)
                                     print(
                                         f"Sending a response to a token verification request {notified_socket.getpeername()}")
-                                    self.send_response(notified_socket, self.create_byte_header('CHECK',
+                                    self.__send_response(notified_socket, self.__create_byte_header('CHECK',
                                                                                                 f"{token}",
                                                                                                 f"{client_id}"))
                                 elif request.startswith('TEST'):
-                                    self.send_response(notified_socket, self.create_byte_header('TEST_SUCCESS'))
+                                    self.__send_response(notified_socket, self.__create_byte_header('TEST_SUCCESS'))
                         except Exception as e:
                             print(e)
-                            self.disconnect(notified_socket)
+                            self.__disconnect(notified_socket)
 
                     for notified_socket in error_sockets:
                         print(f"Error socket {notified_socket}")
 
-    def get_request(self, client_socket) -> str | None:
+    def __get_request(self, client_socket) -> str | None:
         return client_socket.recv(512).decode('utf-8').strip()
 
-    def send_response(self, client_socket, data: bin) -> None:
+    def __send_response(self, client_socket, data: bin) -> None:
         client_socket.sendall(data)
 
-    def generate_token(self, length: int):
+    def __generate_token(self, length: int):
         letters_and_digits = string.ascii_letters + string.digits
         return ''.join(random.choice(letters_and_digits) for _ in range(length))
 
-    def generate_id(self):
+    def __generate_id(self):
         # return random.randint(1000, 9999)
         try:
             with open('db', 'rb') as file:
@@ -103,14 +103,14 @@ class Server:
         except IOError as e:
             print(e)
 
-    def save_to_storage(self, client_id: int, token: str):
+    def __save_to_storage(self, client_id: int, token: str):
         try:
             with open('db', 'a') as f:
                 f.write(f"{client_id}:{token}\n")
         except IOError as e:
             print(e)
 
-    def check_token(self, token: str) -> int:
+    def __check_token(self, token: str) -> int:
         try:
             with open('db', 'r') as f:
                 for line in f:
@@ -120,7 +120,7 @@ class Server:
         except IOError:
             return 0
 
-    def create_byte_header(self, *args: str) -> bin:
+    def __create_byte_header(self, *args: str) -> bin:
         return '\n'.join(args).encode('utf-8').ljust(512, b' ')
 
 
