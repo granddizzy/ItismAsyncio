@@ -5,7 +5,7 @@ import socket
 import os
 
 host = '127.0.0.1'
-port = 8021
+port = 8022
 
 
 def check_bd() -> bool:
@@ -27,7 +27,7 @@ class Server:
 
     def disconnect(self, client_socket):
         self.sockets_list.remove(client_socket)
-        print(f"Disconnected {client_socket.getpeername()[0]}:{client_socket.getpeername()[1]}")
+        # print(f"Disconnected {client_socket.getpeername()[0]}:{client_socket.getpeername()[1]}")
         client_socket.close()
 
     def start(self):
@@ -41,42 +41,43 @@ class Server:
                 while True:
                     read_sockets, write_sockets, error_sockets = select.select(self.sockets_list, self.sockets_list,
                                                                                self.sockets_list)
-
                     for notified_socket in read_sockets:
-                        if notified_socket == server_socket:
-                            client_socket, _ = server_socket.accept()
-                            self.sockets_list.append(client_socket)
-                        else:
-                            try:
-                                request = self.get_request(notified_socket)
-                                if request:
-                                    if request.startswith('GET'):
-                                        client_id = self.generate_id()
-                                        token = self.generate_token(32)
-                                        self.save_to_storage(client_id, token)
-                                        self.send_response(notified_socket, self.create_byte_header('GET',
-                                                                                                    f"{client_id}:{token}"))
-                                    elif request.startswith('CHECK'):
-                                        _, token = request.split('\n', 1)
-                                        self.send_response(notified_socket, self.create_byte_header('CHECK',
-                                                                                                    f'{self.check_token(token)}'))
-                            except:
-                                self.disconnect(notified_socket)
+                        try:
+                            if notified_socket == server_socket:
+                                client_socket, _ = server_socket.accept()
+                                self.sockets_list.append(client_socket)
+                            else:
+                                if (request := self.get_request(notified_socket)) and request.startswith('GET'):
+                                    client_id = self.generate_id()
+                                    token = self.generate_token(32)
+                                    self.save_to_storage(client_id, token)
+                                    self.send_response(notified_socket, self.create_byte_header('GET',
+                                                                                                f"{client_id}",
+                                                                                                f"{token}"))
+                                    print(f"Issued the token {token} to the client {notified_socket.getpeername()}")
+                                    self.disconnect(notified_socket)
+                                elif request.startswith('CHECK'):
+                                    _, token = request.split('\n', 1)
+                                    client_id = self.check_token(token)
+                                    print(
+                                        f"Sending a response to a token verification request {notified_socket.getpeername()}")
+                                    self.send_response(notified_socket, self.create_byte_header('CHECK',
+                                                                                                f"{token}",
+                                                                                                f"{client_id}"))
+                                elif request.startswith('TEST'):
+                                    self.send_response(notified_socket, self.create_byte_header('TEST_SUCCESS'))
+                        except Exception as e:
+                            print(e)
+                            self.disconnect(notified_socket)
+
+                    for notified_socket in error_sockets:
+                        print(f"Error socket {notified_socket}")
 
     def get_request(self, client_socket) -> str | None:
-        try:
-            return client_socket.recv(512).decode('utf-8').strip()
-        except socket.timeout:
-            print(f"Timeout {client_socket.getpeername()}")
-        except (ConnectionError, socket.error) as e:
-            print(e)
+        return client_socket.recv(512).decode('utf-8').strip()
 
-    def send_response(self, client_socket, data: bin) -> bool:
-        try:
-            client_socket.sendall(data)
-            return True
-        except (socket.timeout, ConnectionError, socket.error):
-            return False
+    def send_response(self, client_socket, data: bin) -> None:
+        client_socket.sendall(data)
 
     def generate_token(self, length: int):
         letters_and_digits = string.ascii_letters + string.digits
@@ -90,32 +91,24 @@ class Server:
                 file_size = file.tell()
                 if file_size:
                     file.seek(-2, os.SEEK_END)
-                    while file.read(1) != b'\n':
+                    while file.tell() > 0:
+                        if file.read(1) == b'\n':
+                            break
                         file.seek(-2, os.SEEK_CUR)
                     last_line = file.readline().decode().strip()
                     client_id, _ = last_line.split(':', 1)
                     return int(client_id) + 1
                 else:
                     return 1
-        except IOError:
-            pass
+        except IOError as e:
+            print(e)
 
     def save_to_storage(self, client_id: int, token: str):
         try:
-            with open('db', 'wa') as f:
+            with open('db', 'a') as f:
                 f.write(f"{client_id}:{token}\n")
         except IOError as e:
-            pass
-
-    def get_token(self, client_id: int) -> str:
-        try:
-            with open('db', 'r') as f:
-                for line in f:
-                    stored_client_id, token = line.strip().split(':')
-                    if int(stored_client_id) == client_id:
-                        return token
-        except IOError:
-            return ''
+            print(e)
 
     def check_token(self, token: str) -> int:
         try:
@@ -123,7 +116,7 @@ class Server:
                 for line in f:
                     client_id, stored_token = line.strip().split(':')
                     if stored_token == token:
-                        return int(client_id)
+                        return client_id
         except IOError:
             return 0
 
