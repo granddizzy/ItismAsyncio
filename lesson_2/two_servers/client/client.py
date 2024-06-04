@@ -16,8 +16,8 @@ class Client:
         self.tokenserver_port = tokenserver_port
         self.__workserver_socket = None
         self.__tokenserver_socket = None
-        self.client_id = 0
-        self.token = ''
+        self.__client_id = 0
+        self.__token = ''
 
     def start(self):
         while True:
@@ -27,7 +27,7 @@ class Client:
                 else:
                     self.__send_request(self.__tokenserver_socket, self.__create_byte_header('GET'))
                     if (response := self.__get_response(self.__tokenserver_socket)) and response.startswith('GET'):
-                        _, self.client_id, self.token = response.split('\n')
+                        _, self.__client_id, self.__token = response.split('\n')
                     self.__tokenserver_socket.close()
                     break
             except Exception as e:
@@ -41,10 +41,10 @@ class Client:
                     self.__set_connection_to_workserver()
                 else:
                     self.__send_request(self.__workserver_socket,
-                                        self.__create_byte_header('GET', self.token))
+                                        self.__create_byte_header('GET', self.__token))
                     if response := self.__get_response(self.__workserver_socket):
                         _, res = response.split('\n', 1)
-                        print(f"{self.client_id} {res}")
+                        print(f"{self.__client_id} {res}")
             except Exception as e:
                 print(e)
                 if self.__workserver_socket:
@@ -74,10 +74,17 @@ class Client:
         used_socket.sendall(data)
 
     def __get_response(self, used_socket: socket.socket) -> str | None:
+        # return used_socket.recv(512).decode('utf-8').strip()
         return used_socket.recv(512).decode('utf-8').strip()
 
     def __create_byte_header(self, *args) -> bin:
         return '\n'.join(args).encode('utf-8').ljust(512, b' ')
+
+    def get_client_id(self):
+        return self.__client_id
+
+    def get_token(self):
+        return self.__token
 
 
 if __name__ == "__main__":

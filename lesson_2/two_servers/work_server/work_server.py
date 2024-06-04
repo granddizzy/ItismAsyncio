@@ -33,7 +33,7 @@ class Server:
         # cache clearing
         to_del = []
         for k, v in self.__cashed_tokens.items():
-            if v[0] == client_socket:
+            if v['socket'] == client_socket:
                 to_del.append(k)
         for k in to_del:
             self.__cashed_tokens.pop(k)
@@ -47,8 +47,8 @@ class Server:
             self.__sockets_list = [server_socket]
             self.__set_connection_to_tokenserver()
             while True:
-                read_sockets, write_sockets, error_sockets = select.select(self.__sockets_list, self.__sockets_list,
-                                                                           self.__sockets_list)
+                read_sockets, _, error_sockets = select.select(self.__sockets_list, [],
+                                                               self.__sockets_list)
 
                 for notified_socket in read_sockets:
                     try:
@@ -60,23 +60,29 @@ class Server:
                                 # _, token, client_id = request.split('\n', 2)
                                 _, token, client_id = re.split(r'\s*\n\s*', response)
                                 if client_id and (token_cashed_data := self.__cashed_tokens.get(token)):
-                                    self.__cashed_tokens[token] = (
-                                        token_cashed_data[0], client_id, token_cashed_data[2])
+                                    self.__cashed_tokens[token]['client_id'] = client_id
                                     thread = threading.Thread(target=self.__do_work,
-                                                              args=(token_cashed_data[0], ''))
+                                                              args=(
+                                                                  token_cashed_data['socket'],
+                                                                  token_cashed_data['request']))
                                     thread.start()
                                 else:
-                                    self.__send_data(token_cashed_data[0],
+                                    self.__send_data(token_cashed_data['socket'],
                                                      self.__create_byte_header('ERROR', 'Token not valid'))
                         else:
                             if (request := self.__get_data(notified_socket)) and request.startswith('GET'):
                                 _, token = request.split('\n', 1)
-                                if (token_cashed_data := self.__cashed_tokens.get(token)) and token_cashed_data[1]:
+                                if (
+                                        token_cashed_data := self.__cashed_tokens.get(
+                                            token)) and token_cashed_data['client_id']:
                                     thread = threading.Thread(target=self.__do_work,
-                                                              args=(token_cashed_data[0], token_cashed_data[2]))
+                                                              args=(
+                                                                  token_cashed_data['socket'],
+                                                                  token_cashed_data['request']))
                                     thread.start()
                                 else:
-                                    self.__cashed_tokens[token] = (notified_socket, 0, 'GET')
+                                    self.__cashed_tokens[token] = {'socket': notified_socket, 'client_id': 0,
+                                                                   'request': request}
                                     self.__send_data(self.__token_socket, self.__create_byte_header('CHECK', token))
                             elif request.startswith('TEST'):
                                 self.__send_data(notified_socket, self.__create_byte_header('TEST_SUCCESS'))
@@ -89,7 +95,7 @@ class Server:
                 for notified_socket in error_sockets:
                     print(f"Error socket {notified_socket}")
 
-    def __do_work(self, client_socket: socket.socket, request) -> None:
+    def __do_work(self, client_socket: socket.socket, request: str) -> None:
         try:
             time.sleep(1)
             self.__send_data(client_socket, self.__create_byte_header('GET', '42'))
@@ -107,6 +113,7 @@ class Server:
             print(f"Token server not connected: {e}")
 
     def __get_data(self, used_socket) -> str | None:
+        # return used_socket.recv(512).decode('utf-8').strip()
         return used_socket.recv(512).decode('utf-8').strip()
 
     def __send_data(self, used_socket, data: bin) -> None:
