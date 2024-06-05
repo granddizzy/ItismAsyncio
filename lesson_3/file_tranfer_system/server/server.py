@@ -41,10 +41,10 @@ class Server:
                                                        self.__create_byte_data('ERROR', 'File not exists'), loop)
                     elif request.startswith('CHECK'):
                         _, filename = request.split('\n', 1)
-                        # if check_filename(filename):
-                        #     send_data(client_socket, create_byte_header('EXISTS'))
-                        # else:
-                        #     send_data(client_socket, create_byte_header('NOT_EXISTS'))
+                        if self.__check_filename(filename):
+                            await self.__send_response(client_socket, self.__create_byte_data('EXISTS'), loop)
+                        else:
+                            await self.__send_response(client_socket, self.__create_byte_data('NOT_EXISTS'), loop)
                     elif request.startswith('PUT'):
                         _, filename, filesize, act = request.split('\n', 3)
                         # if not re.search(forbidden_chars, filename):
