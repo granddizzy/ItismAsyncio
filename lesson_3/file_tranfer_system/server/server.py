@@ -1,7 +1,7 @@
 import asyncio
 import os
+import re
 import socket
-import sys
 from pathlib import Path
 
 host = '127.0.0.1'
@@ -47,28 +47,33 @@ class Server:
                             await self.__send_response(client_socket, self.__create_byte_data('NOT_EXISTS'), loop)
                     elif request.startswith('PUT'):
                         _, filename, filesize, act = request.split('\n', 3)
-                        # if not re.search(forbidden_chars, filename):
-                        #     put_file(client_socket, filename, int(filesize), act)
-                        # else:
-                        #     send_data(client_socket, create_byte_header('ERROR', 'Forbidden chars'))
+                        if not re.search(self.__forbidden_chars, filename):
+                            await self.__put_file(client_socket, filename, int(filesize), act, loop)
+                        else:
+                            await self.__send_response(client_socket,
+                                                       self.__create_byte_data('ERROR', 'Forbidden chars'), loop)
                     elif request.startswith('DEL'):
                         _, filename = request.split('\n', 1)
-                        # del_file(filename, client_socket)
+                        await self.__del_file(filename, client_socket, loop)
                     elif request.startswith('QUIT'):
                         self.__disconnect(client_socket)
+                        break
+            except (ConnectionResetError, BrokenPipeError):
+                print("Client disconnected unexpectedly")
+                client_socket.close()
+                break
             except Exception as e:
                 print(f"Error handling client: {e}")
-            # finally:
-            #     client_socket.close()
+                client_socket.close()
+                break
 
     def __check_filename(self, filename: str) -> bool:
-        return os.path.exists(os.path.join(self.__files_dir, f"{filename}.txt"))
+        return os.path.exists(os.path.join(self.__files_dir, filename))
 
     @staticmethod
     def __disconnect(client_socket):
         print(f"Disconnected {client_socket.getpeername()[0]}:{client_socket.getpeername()[1]}")
         client_socket.close()
-        sys.exit()
 
     def __create_server_socket(self):
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -112,11 +117,39 @@ class Server:
         await self.__send_response(client_socket, data, loop)
 
     async def __get_file(self, client_socket, filename, loop: asyncio.AbstractEventLoop):
-        fullpath = os.path.join(self.__files_dir, f"{filename}.txt")
+        fullpath = os.path.join(self.__files_dir, filename)
         await self.__send_response(client_socket, self.__create_byte_data('GET', str(os.path.getsize(fullpath))), loop)
         with open(fullpath, 'rb') as f:
             while chunk := f.read(1024):
                 await self.__send_response(client_socket, chunk, loop)
+
+    async def __put_file(self, client_socket: socket.socket, filename: str, filesize: int, act: str,
+                         loop: asyncio.AbstractEventLoop) -> None:
+        mode = 'wb'
+        if self.__check_filename(filename) and act == 'ADD':
+            mode = 'ab'
+
+        bytes_received = 0
+        try:
+            with open(os.path.join(self.__files_dir, f"{filename}"), mode) as f:
+                while bytes_received < filesize:
+                    chunk = await loop.sock_recv(client_socket, min(1024, filesize - bytes_received))
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    bytes_received += len(chunk)
+        except Exception as e:
+            await self.__send_response(client_socket, self.__create_byte_data('ERROR', 'No data'), loop)
+            return
+
+        await self.__send_response(client_socket, self.__create_byte_data('SUCCESS'), loop)
+
+    async def __del_file(self, filename: str, client_socket: socket.socket, loop: asyncio.AbstractEventLoop) -> None:
+        if self.__check_filename(filename):
+            os.remove(os.path.join(files_dir, filename))
+            await self.__send_response(client_socket, self.__create_byte_data('SUCCESS'), loop)
+        else:
+            await self.__send_response(client_socket, self.__create_byte_data('ERROR', 'File not exists'), loop)
 
 
 async def main():
