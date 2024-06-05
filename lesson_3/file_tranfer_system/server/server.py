@@ -1,8 +1,8 @@
 import asyncio
 import os
 import re
-import socket
 from pathlib import Path
+from asyncio.streams import StreamReader, StreamWriter
 
 host = '127.0.0.1'
 port = 8020
@@ -18,79 +18,79 @@ class Server:
 
     async def start(self):
         if self.__check_directory():
-            server_socket = self.__create_server_socket()
-            loop = asyncio.get_event_loop()
-            await loop.sock_connect(server_socket, (self.host, self.port))
-            while True:
-                client_socket, _ = server_socket.accept()
-                await asyncio.create_task(self.__handle(client_socket))
+            server = await asyncio.start_server(client_connected_cb=self.__handle,
+                                                host=self.host,
+                                                port=self.port
+                                                )
+            addr = server.sockets[0].getsockname()
+            print(f'Serving on {addr}')
 
-    async def __handle(self, client_socket):
-        loop = asyncio.get_running_loop()
+            async with server:
+                await server.serve_forever()
+
+    async def __handle(self, reader, writer):
         while True:
             try:
-                if request := await self.__get_request(client_socket, loop):
+                if request := await self.__get_request(reader):
                     if request.startswith('LIST'):
-                        await self.__send_files_list(client_socket, loop)
+                        await self.__send_files_list(writer)
                     elif request.startswith('GET'):
                         _, filename = request.split('\n', 1)
                         if self.__check_filename(filename):
-                            await self.__get_file(client_socket, filename, loop)
+                            await self.__get_file(writer, filename)
                         else:
-                            await self.__send_response(client_socket,
-                                                       self.__create_byte_data('ERROR', 'File not exists'), loop)
+                            await self.__send_response(writer,
+                                                       self.__create_byte_data('ERROR', 'File not exists'))
                     elif request.startswith('CHECK'):
                         _, filename = request.split('\n', 1)
                         if self.__check_filename(filename):
-                            await self.__send_response(client_socket, self.__create_byte_data('EXISTS'), loop)
+                            await self.__send_response(writer, self.__create_byte_data('EXISTS'))
                         else:
-                            await self.__send_response(client_socket, self.__create_byte_data('NOT_EXISTS'), loop)
+                            await self.__send_response(writer, self.__create_byte_data('NOT_EXISTS'))
                     elif request.startswith('PUT'):
                         _, filename, filesize, act = request.split('\n', 3)
                         if not re.search(self.__forbidden_chars, filename):
-                            await self.__put_file(client_socket, filename, int(filesize), act, loop)
+                            await self.__put_file(reader, writer, filename, int(filesize), act)
                         else:
-                            await self.__send_response(client_socket,
-                                                       self.__create_byte_data('ERROR', 'Forbidden chars'), loop)
+                            await self.__send_response(writer,
+                                                       self.__create_byte_data('ERROR', 'Forbidden chars'))
                     elif request.startswith('DEL'):
                         _, filename = request.split('\n', 1)
-                        await self.__del_file(filename, client_socket, loop)
+                        await self.__del_file(filename, writer)
                     elif request.startswith('QUIT'):
-                        self.__disconnect(client_socket)
+                        await self.__disconnect(writer)
                         break
             except (ConnectionResetError, BrokenPipeError):
                 print("Client disconnected unexpectedly")
-                client_socket.close()
+                writer.close()
+                await writer.wait_closed()
                 break
             except Exception as e:
                 print(f"Error handling client: {e}")
-                client_socket.close()
+                writer.close()
+                await writer.wait_closed()
                 break
 
     def __check_filename(self, filename: str) -> bool:
         return os.path.exists(os.path.join(self.__files_dir, filename))
 
     @staticmethod
-    def __disconnect(client_socket):
-        print(f"Disconnected {client_socket.getpeername()[0]}:{client_socket.getpeername()[1]}")
-        client_socket.close()
-
-    def __create_server_socket(self):
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server_socket.bind((self.host, self.port))
-        server_socket.listen(5)
-        server_socket.setblocking(False)
-        return server_socket
+    async def __disconnect(writer: StreamWriter):
+        peername = writer.get_extra_info('peername')
+        if peername:
+            print(f"Disconnected {peername[0]}:{peername[1]}")
+        writer.close()
+        await writer.wait_closed()
 
     @staticmethod
-    async def __get_request(client_socket: socket.socket, loop: asyncio.AbstractEventLoop) -> str | None:
-        data = await loop.sock_recv(client_socket, 512)
+    async def __get_request(reader: StreamReader) -> str | None:
+        data = await reader.read(512)
         return data.decode('utf-8').strip()
 
     @staticmethod
-    async def __send_response(client_socket: socket.socket, data: bytes, loop: asyncio.AbstractEventLoop) -> None:
-        await loop.sock_sendall(client_socket, data)
+    async def __send_response(writer: StreamWriter, data: bytes) -> None:
+        writer.write(data)
+        await writer.drain()
 
     @staticmethod
     def __create_byte_data(*args: str) -> bytes:
@@ -111,20 +111,20 @@ class Server:
             f"{Path(f).stem}:{os.path.getsize(os.path.join(self.__files_dir, f))}:{int(os.path.getmtime(os.path.join(self.__files_dir, f)))}"
             for f in os.listdir(self.__files_dir) if os.path.isfile(os.path.join(self.__files_dir, f))]
 
-    async def __send_files_list(self, client_socket: socket.socket, loop: asyncio.AbstractEventLoop) -> None:
+    async def __send_files_list(self, writer: StreamWriter) -> None:
         data = '\n'.join(self.__get_files_list()).encode('utf-8')
-        await self.__send_response(client_socket, self.__create_byte_data('LIST', str(len(data))), loop)
-        await self.__send_response(client_socket, data, loop)
+        await self.__send_response(writer, self.__create_byte_data('LIST', str(len(data))))
+        await self.__send_response(writer, data)
 
-    async def __get_file(self, client_socket, filename, loop: asyncio.AbstractEventLoop):
+    async def __get_file(self, writer: StreamWriter, filename):
         fullpath = os.path.join(self.__files_dir, filename)
-        await self.__send_response(client_socket, self.__create_byte_data('GET', str(os.path.getsize(fullpath))), loop)
+        await self.__send_response(writer, self.__create_byte_data('GET', str(os.path.getsize(fullpath))))
         with open(fullpath, 'rb') as f:
             while chunk := f.read(1024):
-                await self.__send_response(client_socket, chunk, loop)
+                await self.__send_response(writer, chunk)
 
-    async def __put_file(self, client_socket: socket.socket, filename: str, filesize: int, act: str,
-                         loop: asyncio.AbstractEventLoop) -> None:
+    async def __put_file(self, reader: StreamReader, writer: StreamWriter, filename: str, filesize: int,
+                         act: str) -> None:
         mode = 'wb'
         if self.__check_filename(filename) and act == 'ADD':
             mode = 'ab'
@@ -133,23 +133,24 @@ class Server:
         try:
             with open(os.path.join(self.__files_dir, f"{filename}"), mode) as f:
                 while bytes_received < filesize:
-                    chunk = await loop.sock_recv(client_socket, min(1024, filesize - bytes_received))
+                    chunk = await reader.read(min(1024, filesize - bytes_received))
+
                     if not chunk:
                         break
                     f.write(chunk)
                     bytes_received += len(chunk)
         except Exception as e:
-            await self.__send_response(client_socket, self.__create_byte_data('ERROR', 'No data'), loop)
+            await self.__send_response(writer, self.__create_byte_data('ERROR', 'No data'))
             return
 
-        await self.__send_response(client_socket, self.__create_byte_data('SUCCESS'), loop)
+        await self.__send_response(writer, self.__create_byte_data('SUCCESS'))
 
-    async def __del_file(self, filename: str, client_socket: socket.socket, loop: asyncio.AbstractEventLoop) -> None:
+    async def __del_file(self, filename: str, writer: StreamWriter) -> None:
         if self.__check_filename(filename):
             os.remove(os.path.join(files_dir, filename))
-            await self.__send_response(client_socket, self.__create_byte_data('SUCCESS'), loop)
+            await self.__send_response(writer, self.__create_byte_data('SUCCESS'))
         else:
-            await self.__send_response(client_socket, self.__create_byte_data('ERROR', 'File not exists'), loop)
+            await self.__send_response(writer, self.__create_byte_data('ERROR', 'File not exists'))
 
 
 async def main():
