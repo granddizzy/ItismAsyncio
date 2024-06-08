@@ -1,13 +1,13 @@
 import re
 from datetime import datetime
-
+import aioconsole
 from lesson_3.file_tranfer_system.client.model import ClientError
 
 forbidden_chars = r'[\\/:"*?<>|]'
 
 
 class View:
-    def show_main_menu(self) -> int:
+    async def show_main_menu(self) -> int:
         print()
         print('Главное меню:')
         print('0.Выйти')
@@ -16,9 +16,9 @@ class View:
         print('3.Удалить файл')
         print('4.Получить файл')
         print()
-        return self.input_choice(5)
+        return await self.input_choice(5)
 
-    def show_fileexists_menu(self) -> int:
+    async def show_fileexists_menu(self) -> int:
         print()
         print("Такой файл уже существует на сервере.")
         print('Выберите действие:')
@@ -26,20 +26,20 @@ class View:
         print('1.Дописать')
         print('2.Заменить')
         print()
-        return self.input_choice(3)
+        return await self.input_choice(3)
 
-    def input_choice(self, max_choice_num: int) -> int | None:
+    async def input_choice(self, max_choice_num: int) -> int | None:
         while True:
-            answer = input("Сделайте выбор:")
+            answer = await aioconsole.ainput("Сделайте выбор:")
             if answer.isdigit() and 0 <= int(answer) <= max_choice_num:
                 return int(answer)
 
-    def input_local_path_file(self) -> str:
-        return input("Введите путь к файлу на вашем компьютере:")
+    async def input_local_path_file(self) -> str:
+        return await aioconsole.ainput("Введите путь к файлу на вашем компьютере:")
 
-    def input_filename(self) -> str:
+    async def input_filename(self) -> str:
         while True:
-            filename = input("Введите имя файла на сервере :")
+            filename = await aioconsole.ainput("Введите имя файла на сервере :")
             if not re.search(forbidden_chars, filename):
                 return filename
             else:
@@ -64,8 +64,8 @@ class View:
     def show_message(self, msg):
         print(msg)
 
-    def input_mode_fileexists(self) -> str:
-        choice = self.show_fileexists_menu()
+    async def input_mode_fileexists(self) -> str:
+        choice = await self.show_fileexists_menu()
         if choice == 0:
             return ''
         elif choice == 1:

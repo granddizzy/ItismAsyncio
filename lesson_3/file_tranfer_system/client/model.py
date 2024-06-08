@@ -63,12 +63,17 @@ class Client:
 
     async def put_file(self, path: str, mode: str, filename: str) -> None:
         loop = asyncio.get_event_loop()
-        await self.__send_header(loop, command='PUT', filename=filename, filesize=os.path.getsize(path), mode=mode)
+        filesize = os.path.getsize(path)
+        await self.__send_header(loop, command='PUT', filename=filename, filesize=filesize, mode=mode)
         header = await self.__get_header(loop)
         if header.status == 'READY':
+            buffer_size = 1024
+            # if filesize > 10_485_760:
+            #     buffer_size = 65536
+
             try:
                 async with aiofiles.open(path, 'rb') as f:
-                    while chunk := await f.read(1024):
+                    while chunk := await f.read(buffer_size):
                         await loop.sock_sendall(self.client_socket, chunk)
             except (IOError, OSError) as e:
                 raise ClientError(f"Ошибка чтения файла: {e}")
@@ -106,11 +111,15 @@ class Client:
             raise ClientError(f"Файла {filename} нет на сервере")
 
         if header.status == 'READY':
+            buffer_size = 1024
+            if header.filesize > 10_485_760:
+                buffer_size = 65536
+
             bytes_received = 0
             try:
                 async with aiofiles.open(path, 'ab' if mode == 'ADD' else 'wb') as f:
                     while bytes_received < header.filesize:
-                        chunk = await loop.sock_recv(self.client_socket, min(1024, header.filesize - bytes_received))
+                        chunk = await loop.sock_recv(self.client_socket, min(buffer_size, header.filesize - bytes_received))
                         if not chunk:
                             break
                         await f.write(chunk)
