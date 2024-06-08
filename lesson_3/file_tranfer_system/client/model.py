@@ -26,16 +26,7 @@ class Client:
         self.__client_socket = None
         self.__forbidden_chars = r'[\\/:"*?<>|]'
 
-    async def set_connection(self) -> None:
-        try:
-            self.__client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.__client_socket.setblocking(False)
-            loop = asyncio.get_event_loop()
-            await loop.sock_connect(self.__client_socket, (self.host, self.port))
-        except (socket.timeout, ConnectionError, socket.error) as e:
-            raise ClientError(f"Ошибка соединения: {e}")
-
-    async def set_temporary_connection(self) -> socket.socket:
+    async def set_connection(self) -> socket.socket:
         try:
             client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             client_socket.setblocking(False)
@@ -54,10 +45,6 @@ class Client:
                 return True
         except OSError:
             return False
-
-    async def check_connection(self) -> None:
-        if not await self.is_connected(self.__client_socket):
-            await self.set_connection()
 
     async def get_file_list(self, client_socket: socket.socket) -> list:
         files_list = []

@@ -45,7 +45,7 @@ class Controller:
         await self.model.close_connection(self.model.get_client_socket())
 
     async def __show_files_list(self):
-        client_socket = await self.model.set_temporary_connection()
+        client_socket = await self.model.set_connection()
         try:
             file_list = await self.model.get_file_list(client_socket)
             self.view.show_file_list(file_list)
@@ -66,7 +66,7 @@ class Controller:
 
         if path and (filename := await self.view.input_filename()):
             mode = 'WRITE'
-            client_socket = await self.model.set_temporary_connection()
+            client_socket = await self.model.set_connection()
             if await self.model.is_server_file_exists(client_socket, filename):
                 mode = await self.view.input_mode_fileexists()
             if mode in ['WRITE', 'ADD']:
@@ -74,7 +74,7 @@ class Controller:
             await self.model.close_connection(client_socket)
 
     async def __upload_file_to_server(self, path, mode, filename):
-        client_socket = await self.model.set_temporary_connection()
+        client_socket = await self.model.set_connection()
         try:
             await self.model.put_file(client_socket, path, mode, filename)
             self.view.show_message(f"Файл {filename} успешно добавлен")
@@ -87,7 +87,7 @@ class Controller:
             task = asyncio.create_task(self.__delete_file_from_server(filename))
 
     async def __delete_file_from_server(self, filename):
-        client_socket = await self.model.set_temporary_connection()
+        client_socket = await self.model.set_connection()
         try:
             await self.model.del_file(client_socket, filename)
             self.view.show_message(f"Файл {filename} успешно удален")
@@ -97,7 +97,7 @@ class Controller:
 
     async def __download_file_action(self):
         if filename := await self.view.input_filename():
-            client_socket = await self.model.set_temporary_connection()
+            client_socket = await self.model.set_connection()
             if await self.model.is_server_file_exists(client_socket, filename):
                 if path := await self.view.input_local_path_file():
                     mode = 'WRITE'
@@ -110,7 +110,7 @@ class Controller:
             await self.model.close_connection(client_socket)
 
     async def __download_file_from_server(self, filename, path, mode):
-        client_socket = await self.model.set_temporary_connection()
+        client_socket = await self.model.set_connection()
         try:
             await self.model.save_file(client_socket, filename, path, mode)
             self.view.show_message(f"Файл {path} успешно сохранен")
