@@ -4,6 +4,8 @@ import re
 from pathlib import Path
 from asyncio.streams import StreamReader, StreamWriter
 
+import aiofiles
+
 host = '127.0.0.1'
 port = 8020
 files_dir = '../files'
@@ -26,15 +28,18 @@ class Server:
 
     async def start(self):
         if self.__check_directory():
-            server = await asyncio.start_server(client_connected_cb=self.__handle,
-                                                host=self.host,
-                                                port=self.port
-                                                )
-            addr = server.sockets[0].getsockname()
-            print(f'Serving on {addr}')
+            try:
+                server = await asyncio.start_server(client_connected_cb=self.__handle,
+                                                    host=self.host,
+                                                    port=self.port
+                                                    )
+                addr = server.sockets[0].getsockname()
+                print(f'Serving on {addr}')
 
-            async with server:
-                await server.serve_forever()
+                async with server:
+                    await server.serve_forever()
+            except OSError as e:
+                print(e)
 
     async def __handle(self, reader, writer):
         peername = writer.get_extra_info('peername')
@@ -44,46 +49,42 @@ class Server:
             try:
                 header = await self.__get_header(reader)
                 if header.command:
-                    if header.command == 'GET_LIST':
-                        await self.__send_files_list(writer)
-                    elif header.command == 'GET':
-                        if self.__check_filename(header.filename):
-                            await self.__get_file(writer, header.filename)
-                        else:
-                            await self.__send_header(writer, status='ERROR', message='File not exists')
-                    elif header.command == 'CHECK':
-                        if self.__check_filename(header.filename):
-                            await self.__send_header(writer, status='EXISTS')
-                        else:
-                            await self.__send_header(writer, status='NOT_EXISTS')
-                    elif header.command == 'PUT':
-                        if not re.search(self.__forbidden_chars, header.filename):
-                            await self.__send_header(writer, status='READY')
-                            await self.__put_file(reader, writer, header.filename, header.filesize, header.mode)
-                        else:
-                            await self.__send_header(writer, status='ERROR', message='Forbidden chars')
-                    elif header.command == 'DEL':
-                        await self.__del_file(header.filename, writer)
-                    elif header.command == 'TEST':
-                        await self.__send_header(writer, status='SUCCESS')
-                    elif header.command == 'QUIT':
-                        await self.__disconnect(writer)
-                        break
+                    await self.__process_command(header, reader, writer)
             except (ConnectionResetError, BrokenPipeError):
-                peername = writer.get_extra_info('peername')
                 if peername:
                     print(f"Client disconnected unexpectedly {peername[0]}:{peername[1]}")
-                writer.close()
-                await writer.wait_closed()
+                await self.__disconnect(writer)
                 break
             except Exception as e:
-                peername = writer.get_extra_info('peername')
-                if peername:
-                    print(f"Client {peername[0]}:{peername[1]}")
                 print(f"Error handling: {e}")
-                writer.close()
-                await writer.wait_closed()
+                await self.__disconnect(writer)
                 break
+
+    async def __process_command(self, header: RequestHeader, reader: StreamReader, writer: StreamWriter) -> None:
+        if header.command == 'GET_LIST':
+            await self.__send_files_list(writer)
+        elif header.command == 'GET':
+            if self.__check_filename(header.filename):
+                await self.__get_file(writer, header.filename)
+            else:
+                await self.__send_header(writer, status='ERROR', message='File not exists')
+        elif header.command == 'CHECK':
+            if self.__check_filename(header.filename):
+                await self.__send_header(writer, status='EXISTS')
+            else:
+                await self.__send_header(writer, status='NOT_EXISTS')
+        elif header.command == 'PUT':
+            if not re.search(self.__forbidden_chars, header.filename):
+                await self.__send_header(writer, status='READY')
+                await self.__put_file(reader, writer, header.filename, header.filesize, header.mode)
+            else:
+                await self.__send_header(writer, status='ERROR', message='Forbidden chars')
+        elif header.command == 'DEL':
+            await self.__del_file(header.filename, writer)
+        elif header.command == 'TEST':
+            await self.__send_header(writer, status='SUCCESS')
+        elif header.command == 'QUIT':
+            await self.__disconnect(writer)
 
     def __check_filename(self, filename: str) -> bool:
         return os.path.exists(os.path.join(self.__files_dir, filename))
@@ -133,10 +134,10 @@ class Server:
         await writer.drain()
 
     async def __get_file(self, writer: StreamWriter, filename):
-        fullpath = os.path.join(self.__files_dir, filename)
-        await self.__send_header(writer, status='READY', filesize=os.path.getsize(fullpath))
-        with open(fullpath, 'rb') as f:
-            while chunk := f.read(1024):
+        path = os.path.join(self.__files_dir, filename)
+        await self.__send_header(writer, status='READY', filesize=os.path.getsize(path))
+        async with aiofiles.open(path, 'rb') as f:
+            while chunk := await f.read(1024):
                 writer.write(chunk)
                 await writer.drain()
 
@@ -148,13 +149,14 @@ class Server:
 
         bytes_received = 0
         try:
-            with open(os.path.join(self.__files_dir, filename), mode) as f:
+            path = os.path.join(self.__files_dir, filename)
+            async with aiofiles.open(path, mode) as f:
                 while bytes_received < filesize:
                     chunk = await reader.read(min(1024, filesize - bytes_received))
 
                     if not chunk:
                         break
-                    f.write(chunk)
+                    await f.write(chunk)
                     bytes_received += len(chunk)
         except Exception as e:
             await self.__send_header(writer, status='ERROR', message='No data')
@@ -164,7 +166,8 @@ class Server:
 
     async def __del_file(self, filename: str, writer: StreamWriter) -> None:
         if self.__check_filename(filename):
-            os.remove(os.path.join(files_dir, filename))
+            path = os.path.join(self.__files_dir, filename)
+            os.remove(path)
             await self.__send_header(writer, status='SUCCESS')
         else:
             await self.__send_header(writer, status='ERROR', message='File not exists')
@@ -176,4 +179,7 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Server stopped manually.")

@@ -16,7 +16,7 @@ class Controller:
         while True:
             try:
                 choice = self.view.show_main_menu()
-                # self.model.check_connection()
+                await self.model.check_connection()
 
                 if choice == 0:
                     await self.exit_client()

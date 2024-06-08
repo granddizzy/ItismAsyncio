@@ -3,6 +3,8 @@ import os
 import socket
 from asyncio import AbstractEventLoop
 
+import aiofiles
+
 
 class ClientError(Exception):
     def __init__(self, message: str):
@@ -11,7 +13,7 @@ class ClientError(Exception):
 
 
 class ResponseHeader:
-    def __init__(self, status: str, message: str, filesize: str) -> None:
+    def __init__(self, status: str, message: str = '', filesize: str = 0) -> None:
         self.status = status
         self.message = message
         self.filesize = int(filesize)
@@ -34,17 +36,17 @@ class Client:
             raise ClientError(f"Ошибка соединения: {e}")
 
     async def is_connected(self) -> bool:
-        loop = asyncio.get_event_loop()
-        await self.__send_header(loop, command='TEST')
-        header = await self.__get_header(loop)
-        if header.status == 'SUCCESS':
-            return True
-        return False
+        try:
+            loop = asyncio.get_event_loop()
+            await self.__send_header(loop, command='TEST')
+            header = await self.__get_header(loop)
+            if header.status == 'SUCCESS':
+                return True
+        except OSError:
+            return False
 
-    async def check_connecction(self) -> None:
+    async def check_connection(self) -> None:
         if not await self.is_connected():
-            if self.client_socket:
-                self.client_socket.close()
             await self.set_connection()
 
     async def get_file_list(self) -> list:
@@ -65,8 +67,8 @@ class Client:
         header = await self.__get_header(loop)
         if header.status == 'READY':
             try:
-                with open(path, 'rb') as f:
-                    while chunk := f.read(1024):
+                async with aiofiles.open(path, 'rb') as f:
+                    while chunk := await f.read(1024):
                         await loop.sock_sendall(self.client_socket, chunk)
             except (IOError, OSError) as e:
                 raise ClientError(f"Ошибка чтения файла: {e}")
@@ -74,14 +76,15 @@ class Client:
             raise ClientError(header.message)
 
     async def __receive_data(self, loop: AbstractEventLoop, filesize: int) -> bytes:
-        buffer = b''
-        count = filesize // 1024
-        bytes_remainder = filesize % 1024
-        for _ in range(count):
-            buffer += await loop.sock_recv(self.client_socket, 1024)
-        if bytes_remainder:
-            buffer += await loop.sock_recv(self.client_socket, bytes_remainder)
-        return buffer
+        bytes_received = 0
+        data = b''
+        while bytes_received < filesize:
+            chunk = await loop.sock_recv(self.client_socket, min(1024, filesize - bytes_received))
+            if not chunk:
+                break
+            bytes_received += len(chunk)
+            data += chunk
+        return data
 
     async def del_file(self, filename: str) -> None:
         loop = asyncio.get_event_loop()
@@ -103,12 +106,15 @@ class Client:
             raise ClientError(f"Файла {filename} нет на сервере")
 
         if header.status == 'READY':
-            buffer = await self.__receive_data(loop, header.filesize)
-
+            bytes_received = 0
             try:
-                if buffer:
-                    with open(path, 'ab' if mode == 'ADD' else 'wb') as f:
-                        f.write(buffer)
+                async with aiofiles.open(path, 'ab' if mode == 'ADD' else 'wb') as f:
+                    while bytes_received < header.filesize:
+                        chunk = await loop.sock_recv(self.client_socket, min(1024, header.filesize - bytes_received))
+                        if not chunk:
+                            break
+                        await f.write(chunk)
+                        bytes_received += len(chunk)
             except (IOError, OSError) as e:
                 raise ClientError(f"Ошибка записи файла: {e}")
 
@@ -138,9 +144,12 @@ class Client:
         return os.path.getsize(path) > 0
 
     async def __get_header(self, loop: asyncio.AbstractEventLoop) -> ResponseHeader | None:
-        data = await loop.sock_recv(self.client_socket, 512)
-        str_data = data.decode('utf-8').strip()
-        return ResponseHeader(*str_data.split('\n'))
+        try:
+            data = await asyncio.wait_for(loop.sock_recv(self.client_socket, 512), 5)
+            str_data = data.decode('utf-8').strip()
+            return ResponseHeader(*str_data.split('\n'))
+        except asyncio.TimeoutError:
+            return ResponseHeader('Error', 'Time out')
 
     async def __send_header(self, loop: asyncio.AbstractEventLoop, command: str, filename: str = '',
                             filesize: int = 0, mode: str = 'WRITE') -> None:
