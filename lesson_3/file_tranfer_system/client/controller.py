@@ -11,11 +11,6 @@ class Controller:
         self.tasks = []
 
     async def start_client(self):
-        # try:
-        #     await self.model.set_connection()
-        # except ClientError as e:
-        #     self.view.show_error(e)
-
         try:
             await self.__process_choice()
         except ClientError as e:
