@@ -16,31 +16,31 @@ class Controller:
         except ClientError as e:
             self.view.show_error(e)
 
+        try:
+            await self.__process_choice()
+        except ClientError as e:
+            self.view.show_error(e)
+        except Exception as e:
+            self.view.show_error(ClientError(f"{e}"))
+
+    async def __process_choice(self):
         while True:
-            try:
-                choice = await self.view.show_main_menu()
-                await self.model.check_connection()
+            choice = await self.view.show_main_menu()
+            await self.model.check_connection()
 
-                if choice == 0:
-                    await self.exit_client()
-                    break
-                elif choice == 1:
-                    task = asyncio.create_task(self.__show_files_list())
-                    #self.tasks.append(task)
-                elif choice == 2:
-                    await self.upload_file()
-                elif choice == 3:
-                    await self.delete_file()
-                elif choice == 4:
-                    await self.download_file()
-            except ClientError as e:
-                self.view.show_error(e)
-            except Exception as e:
-                self.view.show_error(ClientError(f"{e}"))
+            if choice == 0:
+                await self.__exit_client()
+                break
+            elif choice == 1:
+                task = asyncio.create_task(self.__show_files_list())
+            elif choice == 2:
+                await self.__upload_file_action()
+            elif choice == 3:
+                await self.__delete_file_action()
+            elif choice == 4:
+                await self.__download_file_action()
 
-        #await asyncio.gather(*self.tasks)
-
-    async def exit_client(self):
+    async def __exit_client(self):
         self.view.show_message("До свидания!!!")
         await self.model.close_connection()
 
@@ -48,7 +48,7 @@ class Controller:
         file_list = await self.model.get_file_list()
         self.view.show_file_list(file_list)
 
-    async def upload_file(self):
+    async def __upload_file_action(self):
         while True:
             path = await self.view.input_local_path_file()
             if self.model.is_local_file_exists(path):
@@ -70,12 +70,15 @@ class Controller:
         await self.model.put_file(path, mode, filename)
         self.view.show_message(f"Файл {filename} успешно добавлен")
 
-    async def delete_file(self):
+    async def __delete_file_action(self):
         if filename := await self.view.input_filename():
-            await self.model.del_file(filename)
-            self.view.show_message(f"Файл {filename} успешно удален")
+            task = asyncio.create_task(self.__delete_file_from_server(filename))
 
-    async def download_file(self):
+    async def __delete_file_from_server(self, filename):
+        await self.model.del_file(filename)
+        self.view.show_message(f"Файл {filename} успешно удален")
+
+    async def __download_file_action(self):
         if filename := await self.view.input_filename():
             if await self.model.is_server_file_exists(filename):
                 if path := await self.view.input_local_path_file():
@@ -83,7 +86,10 @@ class Controller:
                     if await self.model.is_server_file_exists(path):
                         mode = self.view.input_mode_fileexists()
                     if mode in ['WRITE', 'ADD']:
-                        await self.model.save_file(filename, path, mode)
-                        self.view.show_message(f"Файл {path} успешно сохранен")
+                        task = asyncio.create_task(self.__download_file_from_server(filename, path, mode))
             else:
                 self.view.show_error(ClientError(f"Файл {filename} не найден на сервере"))
+
+    async def __download_file_from_server(self, filename, path, mode):
+        await self.model.save_file(filename, path, mode)
+        self.view.show_message(f"Файл {path} успешно сохранен")

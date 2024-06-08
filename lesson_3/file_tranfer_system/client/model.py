@@ -68,8 +68,8 @@ class Client:
         header = await self.__get_header(loop)
         if header.status == 'READY':
             buffer_size = 1024
-            # if filesize > 10_485_760:
-            #     buffer_size = 65536
+            if filesize > 10_485_760:
+                buffer_size = 65536
 
             try:
                 async with aiofiles.open(path, 'rb') as f:
@@ -77,6 +77,10 @@ class Client:
                         await loop.sock_sendall(self.client_socket, chunk)
             except (IOError, OSError) as e:
                 raise ClientError(f"Ошибка чтения файла: {e}")
+
+            header = await self.__get_header(loop)
+            if header.status != 'SUCCESS':
+                raise ClientError(header.message)
         else:
             raise ClientError(header.message)
 
@@ -119,7 +123,8 @@ class Client:
             try:
                 async with aiofiles.open(path, 'ab' if mode == 'ADD' else 'wb') as f:
                     while bytes_received < header.filesize:
-                        chunk = await loop.sock_recv(self.client_socket, min(buffer_size, header.filesize - bytes_received))
+                        chunk = await loop.sock_recv(self.client_socket,
+                                                     min(buffer_size, header.filesize - bytes_received))
                         if not chunk:
                             break
                         await f.write(chunk)
