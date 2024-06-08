@@ -19,27 +19,44 @@ class ResponseHeader:
         self.filesize = int(filesize)
 
 
+class ConnectedSocket:
+
+    def __init__(self, model):
+        self.connection = None
+        self.model = model
+
+    async def __aenter__(self):
+        try:
+            self.connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.connection.setblocking(False)
+            loop = asyncio.get_event_loop()
+            await loop.sock_connect(self.connection, (self.model.host, self.model.port))
+            return self.connection
+        except (socket.timeout, ConnectionError, socket.error) as e:
+            raise ClientError(f"Ошибка соединения: {e}")
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.connection:
+            if await self.model.is_connected(self.connection):
+                loop = asyncio.get_event_loop()
+                await self.model.send_header(loop, self.connection, command='QUIT')
+                try:
+                    self.connection.shutdown(socket.SHUT_RDWR)
+                except (ConnectionError, socket.error):
+                    pass
+            self.connection.close()
+
+
 class Client:
     def __init__(self, host: str, port: int):
         self.host = host
         self.port = port
-        self.__client_socket = None
         self.__forbidden_chars = r'[\\/:"*?<>|]'
-
-    async def set_connection(self) -> socket.socket:
-        try:
-            client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            client_socket.setblocking(False)
-            loop = asyncio.get_event_loop()
-            await loop.sock_connect(client_socket, (self.host, self.port))
-            return client_socket
-        except (socket.timeout, ConnectionError, socket.error) as e:
-            raise ClientError(f"Ошибка соединения: {e}")
 
     async def is_connected(self, client_socket) -> bool:
         try:
             loop = asyncio.get_event_loop()
-            await self.__send_header(loop, client_socket, command='TEST')
+            await self.send_header(loop, client_socket, command='TEST')
             header = await self.__get_header(loop, client_socket)
             if header.status == 'SUCCESS':
                 return True
@@ -49,7 +66,7 @@ class Client:
     async def get_file_list(self, client_socket: socket.socket) -> list:
         files_list = []
         loop = asyncio.get_event_loop()
-        await self.__send_header(loop, client_socket, command='GET_LIST')
+        await self.send_header(loop, client_socket, command='GET_LIST')
         header = await self.__get_header(loop, client_socket)
         if header.status == 'LIST':
             data = await self.__receive_data(loop, client_socket, header.filesize)
@@ -61,8 +78,8 @@ class Client:
     async def put_file(self, client_socket: socket.socket, path: str, mode: str, filename: str) -> None:
         loop = asyncio.get_event_loop()
         filesize = os.path.getsize(path)
-        await self.__send_header(loop, client_socket, command='PUT', filename=filename, filesize=filesize,
-                                 mode=mode)
+        await self.send_header(loop, client_socket, command='PUT', filename=filename, filesize=filesize,
+                               mode=mode)
         header = await self.__get_header(loop, client_socket)
         if header.status == 'READY':
             buffer_size = 1024
@@ -95,19 +112,19 @@ class Client:
 
     async def del_file(self, client_socket: socket.socket, filename: str) -> None:
         loop = asyncio.get_event_loop()
-        await self.__send_header(loop, client_socket, command='CHECK', filename=filename)
+        await self.send_header(loop, client_socket, command='CHECK', filename=filename)
         header = await self.__get_header(loop, client_socket)
         if header.status == "NOT_EXISTS":
             raise ClientError(f"Файла {filename} нет на сервере")
 
-        await self.__send_header(loop, client_socket, command='DEL', filename=filename)
+        await self.send_header(loop, client_socket, command='DEL', filename=filename)
         header = await self.__get_header(loop, client_socket)
         if header.status == 'ERROR':
             raise ClientError(header.message)
 
     async def save_file(self, client_socket: socket.socket, filename: str, path: str, mode: str) -> None:
         loop = asyncio.get_event_loop()
-        await self.__send_header(loop, client_socket, command='GET', filename=filename)
+        await self.send_header(loop, client_socket, command='GET', filename=filename)
         header = await self.__get_header(loop, client_socket)
         if header.status == "NOT_EXISTS":
             raise ClientError(f"Файла {filename} нет на сервере")
@@ -130,20 +147,9 @@ class Client:
             except (IOError, OSError) as e:
                 raise ClientError(f"Ошибка записи файла: {e}")
 
-    async def close_connection(self, client_socket) -> None:
-        if client_socket:
-            if await self.is_connected(client_socket):
-                loop = asyncio.get_event_loop()
-                await self.__send_header(loop, client_socket, command='QUIT')
-                try:
-                    client_socket.shutdown(socket.SHUT_RDWR)
-                except (ConnectionError, socket.error):
-                    pass
-            client_socket.close()
-
     async def is_server_file_exists(self, client_socket: socket.socket, filename: str) -> bool:
         loop = asyncio.get_event_loop()
-        await self.__send_header(loop, client_socket, command='CHECK', filename=filename)
+        await self.send_header(loop, client_socket, command='CHECK', filename=filename)
         header = await self.__get_header(loop, client_socket)
         if header.status == "EXISTS":
             return True
@@ -164,9 +170,9 @@ class Client:
         except asyncio.TimeoutError:
             return ResponseHeader('Error', 'Time out')
 
-    async def __send_header(self, loop: asyncio.AbstractEventLoop, client_socket: socket.socket, command: str,
-                            filename: str = '',
-                            filesize: int = 0, mode: str = 'WRITE') -> None:
+    async def send_header(self, loop: asyncio.AbstractEventLoop, client_socket: socket.socket, command: str,
+                          filename: str = '',
+                          filesize: int = 0, mode: str = 'WRITE') -> None:
         b_data = self.__create_byte_header(command, filename, str(filesize), mode)
         await loop.sock_sendall(client_socket, b_data)
 
@@ -174,5 +180,3 @@ class Client:
     def __create_byte_header(*args: str) -> bytes:
         return '\n'.join(args).encode('utf-8').ljust(512, b' ')
 
-    def get_client_socket(self) -> socket.socket:
-        return self.__client_socket
