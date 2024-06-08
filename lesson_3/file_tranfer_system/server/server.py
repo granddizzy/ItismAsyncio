@@ -45,53 +45,52 @@ class Server:
         peername = writer.get_extra_info('peername')
         if peername:
             print(f"Connected {peername[0]}:{peername[1]}")
-        while True:
-            try:
-                header = await self.__get_header(reader)
-                if header.command:
-                    await self.__process_command(header, reader, writer)
-            except (ConnectionResetError, BrokenPipeError):
-                if peername:
-                    print(f"Client disconnected unexpectedly {peername[0]}:{peername[1]}")
-                await self.__disconnect(writer)
-                break
-            except Exception as e:
-                print(f"Error handling: {e}")
-                await self.__disconnect(writer)
-                break
-
-    async def __process_command(self, header: RequestHeader, reader: StreamReader, writer: StreamWriter) -> None:
-        if header.command == 'GET_LIST':
-            await self.__send_files_list(writer)
-        elif header.command == 'GET':
-            if self.__check_filename(header.filename):
-                await asyncio.create_task(self.__get_file(writer, header.filename))
-            else:
-                await asyncio.create_task(self.__send_header(writer, status='ERROR', message='File not exists'))
-        elif header.command == 'CHECK':
-            if self.__check_filename(header.filename):
-                await asyncio.create_task(self.__send_header(writer, status='EXISTS'))
-            else:
-                await asyncio.create_task(self.__send_header(writer, status='NOT_EXISTS'))
-        elif header.command == 'PUT':
-            if not re.search(self.__forbidden_chars, header.filename):
-                await self.__send_header(writer, status='READY')
-                await asyncio.create_task(
-                    self.__put_file(reader, writer, header.filename, header.filesize, header.mode))
-            else:
-                await self.__send_header(writer, status='ERROR', message='Forbidden chars')
-        elif header.command == 'DEL':
-            await asyncio.create_task(self.__del_file(header.filename, writer))
-        elif header.command == 'TEST':
-            await asyncio.create_task(self.__send_header(writer, status='SUCCESS'))
-        elif header.command == 'QUIT':
+        try:
+            await self.__process_command(reader, writer)
+        except (ConnectionResetError, BrokenPipeError):
+            if peername:
+                print(f"Client disconnected unexpectedly {peername[0]}:{peername[1]}")
             await self.__disconnect(writer)
+        except Exception as e:
+            print(f"Error handling: {e}")
+            await self.__disconnect(writer)
+
+    async def __process_command(self, reader: StreamReader, writer: StreamWriter) -> None:
+        while True:
+            header = await self.__get_header(reader)
+            if header.command:
+                if header.command == 'GET_LIST':
+                    await self.__send_files_list(writer)
+                elif header.command == 'GET':
+                    if self.__check_filename(header.filename):
+                        await asyncio.create_task(self.__get_file(writer, header.filename))
+                    else:
+                        await asyncio.create_task(self.__send_header(writer, status='ERROR', message='File not exists'))
+                elif header.command == 'CHECK':
+                    if self.__check_filename(header.filename):
+                        await asyncio.create_task(self.__send_header(writer, status='EXISTS'))
+                    else:
+                        await asyncio.create_task(self.__send_header(writer, status='NOT_EXISTS'))
+                elif header.command == 'PUT':
+                    if not re.search(self.__forbidden_chars, header.filename):
+                        await self.__send_header(writer, status='READY')
+                        await asyncio.create_task(
+                            self.__put_file(reader, writer, header.filename, header.filesize, header.mode))
+                    else:
+                        await self.__send_header(writer, status='ERROR', message='Forbidden chars')
+                elif header.command == 'DEL':
+                    await asyncio.create_task(self.__del_file(header.filename, writer))
+                elif header.command == 'TEST':
+                    await asyncio.create_task(self.__send_header(writer, status='SUCCESS'))
+                elif header.command == 'QUIT':
+                    await self.__disconnect(writer)
+                    break
 
     def __check_filename(self, filename: str) -> bool:
         return os.path.exists(os.path.join(self.__files_dir, filename))
 
     @staticmethod
-    async def __disconnect(writer: StreamWriter):
+    async def __disconnect(writer: StreamWriter) -> None:
         peername = writer.get_extra_info('peername')
         if peername:
             print(f"Disconnected {peername[0]}:{peername[1]}")
