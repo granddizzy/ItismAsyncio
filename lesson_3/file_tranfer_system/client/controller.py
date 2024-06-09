@@ -1,7 +1,7 @@
 import asyncio
 
 from lesson_3.file_tranfer_system.client.model import Client, ClientError
-from lesson_3.file_tranfer_system.client.abcView import View
+from lesson_3.file_tranfer_system.client.abstractView import View
 from lesson_3.file_tranfer_system.client.model import ConnectedSocket
 
 

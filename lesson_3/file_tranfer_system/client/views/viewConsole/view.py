@@ -2,7 +2,7 @@ import re
 from datetime import datetime
 import aioconsole
 from lesson_3.file_tranfer_system.client.model import ClientError
-from lesson_3.file_tranfer_system.client.abcView import View
+from lesson_3.file_tranfer_system.client.abstractView import View
 
 forbidden_chars = r'[\\/:"*?<>|]'
 

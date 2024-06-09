@@ -5,7 +5,7 @@ import aioconsole
 
 from lesson_3.file_tranfer_system.client.controller import Controller
 from lesson_3.file_tranfer_system.client.model import ClientError
-from lesson_3.file_tranfer_system.client.abcView import View
+from lesson_3.file_tranfer_system.client.abstractView import View
 
 from PyQt6 import QtWidgets
 
