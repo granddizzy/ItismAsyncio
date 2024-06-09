@@ -5,14 +5,14 @@ import aioconsole
 
 from lesson_3.file_tranfer_system.client.controller import Controller
 from lesson_3.file_tranfer_system.client.model import ClientError
-from lesson_3.file_tranfer_system.client.abstractView import View
+from lesson_3.file_tranfer_system.client.abstractView import View as AbstractView
 
 from PyQt6 import QtWidgets
 
 from lesson_3.file_tranfer_system.client.views.viewPyQT import mainWindow
 
 
-class PyQtView(QtWidgets.QWidget, View):
+class PyQtView(QtWidgets.QWidget, AbstractView):
     def __init__(self, parent=None, controller: Controller = None):
         QtWidgets.QWidget.__init__(self, parent)
         self.controller = controller

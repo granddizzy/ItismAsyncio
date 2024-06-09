@@ -2,12 +2,12 @@ import re
 from datetime import datetime
 import aioconsole
 from lesson_3.file_tranfer_system.client.model import ClientError
-from lesson_3.file_tranfer_system.client.abstractView import View
+from lesson_3.file_tranfer_system.client.abstractView import View as AbstractView
 
 forbidden_chars = r'[\\/:"*?<>|]'
 
 
-class ConsoleView(View):
+class ConsoleView(AbstractView):
     async def show_main_menu(self) -> int:
         print()
         print('Главное меню:')
