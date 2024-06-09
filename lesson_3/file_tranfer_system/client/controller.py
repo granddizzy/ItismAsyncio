@@ -1,12 +1,12 @@
 import asyncio
 
 from lesson_3.file_tranfer_system.client.model import Client, ClientError
-from lesson_3.file_tranfer_system.client.view import View
+from lesson_3.file_tranfer_system.client.abcView import View
 from lesson_3.file_tranfer_system.client.model import ConnectedSocket
 
 
 class Controller:
-    def __init__(self, model: Client, view: View):
+    def __init__(self, model: Client, view: View | None):
         self.model = model
         self.view = view
         self.tasks = []
