@@ -23,7 +23,7 @@ def run_gui_app():
     app = QtWidgets.QApplication(sys.argv)
     model = Client("127.0.0.1", 8020)
     controller = Controller(model, None)
-    view = PyQtView(None, controller)
+    view = PyQtView(controller)
     controller.view = view
     view.show()
     sys.exit(app.exec())

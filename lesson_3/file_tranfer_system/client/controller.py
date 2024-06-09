@@ -27,9 +27,9 @@ class Controller:
                 await self.__exit_client()
                 break
             elif choice == 1:
-                task = asyncio.create_task(self.__show_files_list())
+                task = asyncio.create_task(self.show_files_list())
             elif choice == 2:
-                await self.__upload_file_action()
+                await self.upload_file_action()
             elif choice == 3:
                 await self.__delete_file_action()
             elif choice == 4:
@@ -38,7 +38,7 @@ class Controller:
     async def __exit_client(self):
         self.view.show_message("До свидания!!!")
 
-    async def __show_files_list(self):
+    async def show_files_list(self):
         async with ConnectedSocket(self.model) as connection:
             try:
                 file_list = await self.model.get_file_list(connection)
@@ -46,10 +46,12 @@ class Controller:
             except ClientError as e:
                 self.view.show_error(e)
 
-    async def __upload_file_action(self):
+    async def upload_file_action(self):
         while True:
             path = await self.view.input_local_path_file()
-            if self.model.is_local_file_exists(path):
+            if not path:
+                break
+            elif self.model.is_local_file_exists(path):
                 if not self.model.is_local_file_filled(path):
                     self.view.show_error(ClientError(f"Файл {path} пуст"))
                 else:
