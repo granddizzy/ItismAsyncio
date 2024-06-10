@@ -1,6 +1,7 @@
 import sys
 
 from PyQt6 import QtWidgets
+from PyQt6.QtCore import pyqtSignal, QObject
 
 from qasync import QEventLoop, asyncSlot
 

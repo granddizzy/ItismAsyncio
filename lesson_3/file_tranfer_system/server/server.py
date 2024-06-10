@@ -70,36 +70,33 @@ class Server:
                 print(f"Error handling: {e}")
 
     async def __process_command(self, reader: StreamReader, writer: StreamWriter) -> None:
-        async with ConnectedWriter(writer) as conn_writer:
-            while True:
-                header = await self.__get_header(reader)
-                if header.command:
-                    if header.command == 'GET_LIST':
-                        await self.__send_files_list(conn_writer)
-                    elif header.command == 'GET':
-                        if self.__check_filename(header.filename):
-                            await asyncio.create_task(self.__get_file(conn_writer, header.filename))
-                        else:
-                            await asyncio.create_task(
-                                self.__send_header(conn_writer, status='ERROR', message='File not exists'))
-                    elif header.command == 'CHECK':
-                        if self.__check_filename(header.filename):
-                            await asyncio.create_task(self.__send_header(conn_writer, status='EXISTS'))
-                        else:
-                            await asyncio.create_task(self.__send_header(conn_writer, status='NOT_EXISTS'))
-                    elif header.command == 'PUT':
-                        if not re.search(self.__forbidden_chars, header.filename):
-                            await self.__send_header(conn_writer, status='READY')
-                            await asyncio.create_task(
-                                self.__put_file(reader, conn_writer, header.filename, header.filesize, header.mode))
-                        else:
-                            await self.__send_header(conn_writer, status='ERROR', message='Forbidden chars')
-                    elif header.command == 'DEL':
-                        await asyncio.create_task(self.__del_file(header.filename, conn_writer))
-                    elif header.command == 'TEST':
-                        await asyncio.create_task(self.__send_header(conn_writer, status='SUCCESS'))
-                    elif header.command == 'QUIT':
-                        break
+        while True:
+            header = await self.__get_header(reader)
+            if header.command:
+                if header.command == 'GET_LIST':
+                    await self.__send_files_list(writer)
+                elif header.command == 'GET':
+                    if self.__check_filename(header.filename):
+                        await self.__get_file(writer, header.filename)
+                    else:
+                        await self.__send_header(writer, status='ERROR', message='File not exists')
+                elif header.command == 'CHECK':
+                    if self.__check_filename(header.filename):
+                        await self.__send_header(writer, status='EXISTS')
+                    else:
+                        await self.__send_header(writer, status='NOT_EXISTS')
+                elif header.command == 'PUT':
+                    if not re.search(self.__forbidden_chars, header.filename):
+                        await self.__send_header(writer, status='READY')
+                        await self.__put_file(reader, writer, header.filename, header.filesize, header.mode)
+                    else:
+                        await self.__send_header(writer, status='ERROR', message='Forbidden chars')
+                elif header.command == 'DEL':
+                    await self.__del_file(header.filename, writer)
+                elif header.command == 'TEST':
+                    await self.__send_header(writer, status='SUCCESS')
+                elif header.command == 'QUIT':
+                    break
 
     def __check_filename(self, filename: str) -> bool:
         return os.path.exists(os.path.join(self.__files_dir, filename))

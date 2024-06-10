@@ -13,6 +13,7 @@ from lesson_3.file_tranfer_system.client.model import ClientError
 from lesson_3.file_tranfer_system.client.abstractView import View as AbstractView
 
 from PyQt6 import QtWidgets
+from PyQt6.QtCore import pyqtSignal, pyqtProperty, pyqtSlot, QObject, pyqtProperty
 
 from lesson_3.file_tranfer_system.client.views.viewPyQT import mainWindow
 
@@ -70,7 +71,7 @@ class PyQtView(QtWidgets.QMainWindow, AbstractView):
         QtWidgets.QMessageBox.information(self, "Error", error.message)
 
     def show_message(self, msg):
-        QtWidgets.QMessageBox.information(self, "Внимане", msg)
+        QtWidgets.QMessageBox.information(self, "Attention", msg)
 
     async def input_mode_fileexists(self) -> str:
         pass
@@ -78,40 +79,43 @@ class PyQtView(QtWidgets.QMainWindow, AbstractView):
     def slot_upload_file(self) -> None:
         path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Выберите файл", "",
                                                         "All Files (*);;Text Files (*.txt)")
-        filename = os.path.basename(path)
-        task = asyncio.create_task(self.controller.upload_file_to_server(path, 'WRITE', filename))
+        if path:
+            filename = os.path.basename(path)
+            task = asyncio.create_task(self.controller.upload_file_to_server(path, 'WRITE', filename))
 
+    @pyqtSlot()
     def slot_refresh(self) -> None:
         task = asyncio.create_task(self.controller.show_files_list())
 
     def showEvent(self, event):
         pass
 
+    @pyqtSlot()
     def slot_download_file(self):
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Save File", "", "All Files (*);;Text Files (*.txt)")
-        filename = ""
+
         selected_items = self.ui.tableWidget.selectedItems()
 
         if selected_items:
             selected_row = selected_items[0].row()
-            # QtWidgets.QMessageBox.information(self, "Selected Row", f"Selected Row: {selected_row}")
             item = self.ui.tableWidget.item(selected_row, 0)
-            task = asyncio.create_task(self.controller.download_file_from_server(item.text(), path, 'WRITE'))
-        else:
-            # QMessageBox.information(self, "Selected Row", "No row selected")
-            pass
 
+            path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Save File", "", "All Files (*);;Text Files (*.txt)")
+            if path:
+                task = asyncio.create_task(self.controller.download_file_from_server(item.text(), path, 'WRITE'))
+        else:
+            self.show_error(ClientError("Файл не выбран"))
+
+    @pyqtSlot()
     def slot_delete_file(self):
         selected_items = self.ui.tableWidget.selectedItems()
 
         if selected_items:
             selected_row = selected_items[0].row()
-            #QtWidgets.QMessageBox.information(self, "Selected Row", f"Selected Row: {selected_row}")
             item = self.ui.tableWidget.item(selected_row, 0)
             task = asyncio.create_task(self.controller.delete_file_from_server(item.text()))
         else:
-            # QMessageBox.information(self, "Selected Row", "No row selected")
-            pass
+            self.show_error(ClientError("Файл не выбран"))
 
     def closeEvent(self, event):
-        QtCore.QCoreApplication.instance().exit()
+        # QtCore.QCoreApplication.instance().exit()
+        pass
