@@ -131,7 +131,7 @@ class Server:
 
     def __get_files_list(self) -> list:
         return [
-            f"{Path(f).stem}:{os.path.getsize(os.path.join(self.__files_dir, f))}:{int(os.path.getmtime(os.path.join(self.__files_dir, f)))}"
+            f"{Path(f)}:{os.path.getsize(os.path.join(self.__files_dir, f))}:{int(os.path.getmtime(os.path.join(self.__files_dir, f)))}"
             for f in os.listdir(self.__files_dir) if os.path.isfile(os.path.join(self.__files_dir, f))]
 
     async def __send_files_list(self, writer: StreamWriter) -> None:
