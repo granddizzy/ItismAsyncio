@@ -74,7 +74,9 @@ class Controller:
         async with ConnectedSocket(self.model) as connection:
             try:
                 await self.model.put_file(connection, path, mode, filename)
-                self.view.show_message(f"Файл {filename} успешно добавлен")
+                #self.view.show_message(f"Файл {filename} успешно добавлен")
+                files_list = await self.model.get_file_list(connection)
+                self.view.show_file_list(files_list)
             except ClientError as e:
                 self.view.show_error(e)
 
@@ -86,7 +88,9 @@ class Controller:
         async with ConnectedSocket(self.model) as connection:
             try:
                 await self.model.del_file(connection, filename)
-                self.view.show_message(f"Файл {filename} успешно удален")
+                #self.view.show_message(f"Файл {filename} успешно удален")
+                files_list = await self.model.get_file_list(connection)
+                self.view.show_file_list(files_list)
             except ClientError as e:
                 self.view.show_error(e)
 
